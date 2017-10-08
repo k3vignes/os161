@@ -165,14 +165,14 @@ lock_create(const char *name)
         }
         
         // add stuff here as needed
-	lock->lk_wchan = wchan_create(lock->lock_name);
+	lock->lk_wchan = wchan_create(lock->lk_name);
 	if (lock->lk_wchan == NULL) {
 		kfree(lock->lk_name);
 		kfree(lock);
 		return NULL;
 	}
 	
-	lock->locked = FALSE; 
+	lock->locked = false; 
 
 	spinlock_init(&lock->lk_lock);
 
@@ -203,15 +203,15 @@ lock_acquire(struct lock *lock)
 {
         // Write this
 	spinlock_acquire(&lock->lk_lock);
-        while (lock->locked == TRUE) {
+        while (lock->locked == true) {
 		wchan_lock(lock->lk_wchan);
 		spinlock_release(&lock->lk_lock);
                 wchan_sleep(lock->lk_wchan);
 
 		spinlock_acquire(&lock->lk_lock);
         }
-        lock->locked = TRUE;
-	spinlock_release(&sem->sem_lock);
+        lock->locked = true;
+	spinlock_release(&lock->lk_lock);
 }
 
 void
@@ -222,7 +222,7 @@ lock_release(struct lock *lock)
 
 	spinlock_acquire(&lock->lk_lock);
 
-        lock->locked = FALSE;
+        lock->locked = false;
 	wchan_wakeone(lock->lk_wchan);
 
 	spinlock_release(&lock->lk_lock);
