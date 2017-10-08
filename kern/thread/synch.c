@@ -153,6 +153,7 @@ lock_create(const char *name)
         struct lock *lock;
 
         lock = kmalloc(sizeof(struct lock));
+	
         if (lock == NULL) {
                 return NULL;
         }
@@ -164,7 +165,20 @@ lock_create(const char *name)
         }
         
         // add stuff here as needed
-        
+	lock->lk_wchan = wchan_create(lock->lock_name);
+	if (lock->lk_wchan == NULL) {
+		kfree(lock->lk_name);
+		kfree(lock);
+		return NULL;
+	}
+	
+	lock->locked = FALSE; 
+
+	spinlock_init(&lock->lk_lock);
+
+       
+	//
+
         return lock;
 }
 
@@ -174,7 +188,12 @@ lock_destroy(struct lock *lock)
         KASSERT(lock != NULL);
 
         // add stuff here as needed
-        
+
+	/* wchan_cleanup will assert if anyone's waiting on it */
+	spinlock_cleanup(&lock->lk_lock);
+	wchan_destroy(lock->lk_wchan);
+	//
+	
         kfree(lock->lk_name);
         kfree(lock);
 }
@@ -183,16 +202,30 @@ void
 lock_acquire(struct lock *lock)
 {
         // Write this
+	spinlock_acquire(&lock->lk_lock);
+        while (lock->locked == TRUE) {
+		wchan_lock(lock->lk_wchan);
+		spinlock_release(&lock->lk_lock);
+                wchan_sleep(lock->lk_wchan);
 
-        (void)lock;  // suppress warning until code gets written
+		spinlock_acquire(&lock->lk_lock);
+        }
+        lock->locked = TRUE;
+	spinlock_release(&sem->sem_lock);
 }
 
 void
 lock_release(struct lock *lock)
 {
         // Write this
+	KASSERT(lock != NULL);
 
-        (void)lock;  // suppress warning until code gets written
+	spinlock_acquire(&lock->lk_lock);
+
+        lock->locked = FALSE;
+	wchan_wakeone(lock->lk_wchan);
+
+	spinlock_release(&lock->lk_lock);
 }
 
 bool
