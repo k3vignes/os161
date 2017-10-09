@@ -164,7 +164,7 @@ lock_create(const char *name)
                 return NULL;
         }
         
-        // add stuff here as needed
+    // add stuff here as needed
 	lock->lk_wchan = wchan_create(lock->lk_name);
 	if (lock->lk_wchan == NULL) {
 		kfree(lock->lk_name);
@@ -173,6 +173,7 @@ lock_create(const char *name)
 	}
 	
 	lock->locked = false; 
+	lock->thread_holding = lock->lk_name;    
 
 	spinlock_init(&lock->lk_lock);
 
@@ -185,39 +186,43 @@ lock_create(const char *name)
 void
 lock_destroy(struct lock *lock)
 {
-        KASSERT(lock != NULL);
+    KASSERT(lock != NULL);
 
-        // add stuff here as needed
+    // add stuff here as needed
 
 	/* wchan_cleanup will assert if anyone's waiting on it */
 	spinlock_cleanup(&lock->lk_lock);
 	wchan_destroy(lock->lk_wchan);
-	//
+	kfree(lock->thread_holding);
 	
-        kfree(lock->lk_name);
-        kfree(lock);
+	
+    kfree(lock->lk_name);
+    kfree(lock);
 }
 
 void
 lock_acquire(struct lock *lock)
 {
-        // Write this
+    // Write this
 	spinlock_acquire(&lock->lk_lock);
-        while (lock->locked == true) {
-		    wchan_lock(lock->lk_wchan);
-		    spinlock_release(&lock->lk_lock);
-            wchan_sleep(lock->lk_wchan);
+    while (lock->locked == true) {
+	    wchan_lock(lock->lk_wchan);
+	    spinlock_release(&lock->lk_lock);
+        wchan_sleep(lock->lk_wchan);
 
-		    spinlock_acquire(&lock->lk_lock);
-        }
-        lock->locked = true;
+	    spinlock_acquire(&lock->lk_lock);
+    }
+    lock->locked = true;
+    if (lock->thread_holding != NULL)
+         kfree(lock->thread_holding);
+    lock->thread_holding = kstrdup(curthread->t_name); 
 	spinlock_release(&lock->lk_lock);
 }
 
 void
 lock_release(struct lock *lock)
 {
-        // Write this
+    // Write this
 	KASSERT(lock != NULL);
 
 	spinlock_acquire(&lock->lk_lock);
@@ -234,11 +239,10 @@ lock_release(struct lock *lock)
 bool
 lock_do_i_hold(struct lock *lock)
 {
-        // Write this
-
-        (void)lock;  // suppress warning until code gets written
-
-        return true; // dummy until code gets written
+    if (strcmp(lock->thread_holding, curthread->t_name) == 0){
+        return true; 
+    }
+    return false; 
 }
 
 ////////////////////////////////////////////////////////////
