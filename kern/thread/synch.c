@@ -213,6 +213,7 @@ lock_acquire(struct lock *lock)
 	    spinlock_acquire(&lock->lk_lock);
     }
     lock->locked = true;
+    
     if (lock->thread_holding != NULL)
          kfree(lock->thread_holding);
     lock->thread_holding = kstrdup(curthread->t_name); 
@@ -231,6 +232,7 @@ lock_release(struct lock *lock)
     wchan_wakeone(lock->lk_wchan);
 
 	spinlock_release(&lock->lk_lock);
+	
 }
 
 //Return true if the current thread holds the lock; 
