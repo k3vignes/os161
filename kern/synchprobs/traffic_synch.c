@@ -22,7 +22,16 @@
  * replace this with declarations of any synchronization and other variables you need here
  */
 // static struct semaphore *intersectionSem; -- Default
-static struct lock *intersect_lock = 0; 
+
+// forward declarations
+bool validCrossing(Direction origin, Direction destination); 
+struct cv * cur_cv(Direction origin, Direction destination);
+struct lock * cur_lock(Direction origin, Direction destination);
+void alter_counter(Direction origin, Direction destination, bool increment);
+void wake_up_threads(Direction origin, Direction Destination);
+
+static struct lock *intersect_lock = 0;
+
 static struct lock *NE_lock = 0;
 static struct lock *NS_lock = 0;
 static struct lock *NW_lock = 0;
@@ -39,6 +48,92 @@ static struct lock *WN_lock = 0;
 static struct lock *WE_lock = 0;
 static struct lock *WS_lock = 0;
 
+static struct cv *NE_cv = 0;
+static struct cv *NS_cv = 0;
+static struct cv *NW_cv = 0;
+
+static struct cv *ES_cv = 0;
+static struct cv *EW_cv = 0;
+static struct cv *EN_cv = 0;
+
+static struct cv *SW_cv = 0;
+static struct cv *SN_cv = 0;
+static struct cv *SE_cv = 0;
+
+static struct cv *WN_cv = 0;
+static struct cv *WE_cv = 0;
+static struct cv *WS_cv = 0;
+
+
+int volatile NE_counter = 0;
+int volatile NS_counter = 0;
+int volatile NW_counter = 0;
+
+int volatile ES_counter = 0;
+int volatile EW_counter = 0;
+int volatile EN_counter = 0;
+
+int volatile SW_counter = 0;
+int volatile SN_counter = 0;
+int volatile SE_counter = 0;
+
+int volatile WN_counter = 0;
+int volatile WE_counter = 0;
+int volatile WS_counter = 0;
+
+bool validCrossing(Direction origin, Direction destination){
+  if(origin == north && destination == east){
+        return !(ES_counter || EW_counter ||
+        SN_counter || SE_counter || SW_counter ||
+        WN_counter || WE_counter); 
+  }
+  else if (origin == north && destination == south){
+    return !(ES_counter || EW_counter || SW_counter ||
+    WN_counter || WE_counter || WS_counter); 
+  }
+  else if (origin == north && destination == west){
+    return !(SW_counter || EW_counter); 
+  }
+  else if (origin == east && destination == south){
+    return !(NE_counter || NS_counter || SN_counter ||
+    SW_counter || WS_counter || WN_counter || WE_counter); 
+  }
+  else if (origin == east && destination == west){
+    return !(NE_counter || NS_counter || NW_counter ||
+    SN_counter || SW_counter || WN_counter); 
+  }
+  else if (origin == east && destination == north){
+    return !(SN_counter || WN_counter); 
+  }
+  else if (origin == south && destination == west){
+    return !(NE_counter || NS_counter || NW_counter ||
+    ES_counter || EW_counter || WN_counter || WE_counter); 
+    
+  }
+  else if (origin == south && destination == north){
+    return !(NE_counter || EN_counter || ES_counter ||
+    EW_counter || WN_counter || WE_counter); 
+  }
+  else if (origin == south && destination == east){
+    return !(NE_counter || WE_counter); 
+  }
+  else if (origin == west && destination == north){
+    return !(NE_counter || NS_counter || EN_counter ||
+    ES_counter || EW_counter || SN_counter || SW_counter); 
+  }
+  else if (origin == west && destination == east){
+    return !(NE_counter || NS_counter || ES_counter ||
+    SN_counter || SE_counter || SW_counter); 
+  }
+  else if (origin == west && destination == south){
+    return !(NS_counter || ES_counter);
+  }
+  else{
+    panic("traffic_simulation: thread_fork failed: %s\n", strerror(1));
+    return false; 
+  }
+}
+
 /* 
  * The simulation driver will call this function once before starting
  * the simulation
@@ -49,93 +144,40 @@ static struct lock *WS_lock = 0;
 void
 intersection_sync_init(void)
 {
-  /* replace this default implementation with your own implementation 
+    // lock create
+    intersect_lock = lock_create("intersect_lock");
+    NE_lock = lock_create("NE_lock");
+    NS_lock = lock_create("NS_lock");
+    NW_lock = lock_create("NW_lock");
 
-  intersectionSem = sem_create("intersectionSem",1);
-  if (intersectionSem == NULL) {
-    panic("could not create intersection semaphore");
-  }
-  return;
-  
-  */
-    if (intersect_lock == NULL){
-        intersect_lock = lock_create("intersect_lock"); 
-        if (intersect_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (NE_lock == NULL){
-        NE_lock = lock_create("NE_lock"); 
-        if (NE_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (NS_lock == NULL){
-        NS_lock = lock_create("NS_lock"); 
-        if (NE_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (NW_lock == NULL){
-        NW_lock = lock_create("NW_lock"); 
-        if (NW_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (ES_lock == NULL){
-        ES_lock = lock_create("ES_lock"); 
-        if (ES_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (EW_lock == NULL){
-        EW_lock = lock_create("EW_lock"); 
-        if (EW_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (EN_lock == NULL){
-        EN_lock = lock_create("EN_lock"); 
-        if (EN_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (SW_lock == NULL){
-        SW_lock = lock_create("SW_lock"); 
-        if (SW_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (SN_lock == NULL){
-        SN_lock = lock_create("SN_lock"); 
-        if (SN_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (SE_lock == NULL){
-        SE_lock = lock_create("SW_lock"); 
-        if (SW_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (WN_lock == NULL){
-        WN_lock = lock_create("WN_lock"); 
-        if (WN_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (WE_lock == NULL){
-        WE_lock = lock_create("WE_lock"); 
-        if (WE_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
-    if (WS_lock == NULL){
-        WS_lock = lock_create("WS_lock"); 
-        if (WS_lock == NULL) {
-			panic("traffic_synch: lock_create failed\n");
-		}
-    }
+    ES_lock = lock_create("ES_lock");
+    EW_lock = lock_create("EW_lock");
+    EN_lock = lock_create("EN_lock");
+
+    SW_lock = lock_create("SW_lock");
+    SN_lock = lock_create("SN_lock");
+    SE_lock = lock_create("SE_lock");
+
+    WN_lock = lock_create("WN_lock");
+    WE_lock = lock_create("WE_lock");
+    WS_lock = lock_create("WS_lock");
+    
+    //cv create
+    NE_cv = cv_create("NE_cv");
+    NS_cv = cv_create("NS_cv");
+    NW_cv = cv_create("NW_cv");
+
+    ES_cv = cv_create("ES_cv");
+    EW_cv = cv_create("EW_cv");
+    EN_cv = cv_create("EN_cv");
+
+    SW_cv = cv_create("SW_cv");
+    SN_cv = cv_create("SN_cv");
+    SE_cv = cv_create("SE_cv");
+
+    WN_cv = cv_create("WN_cv");
+    WE_cv = cv_create("WE_cv");
+    WS_cv = cv_create("WS_cv");
 }
 
 /* 
@@ -144,14 +186,13 @@ intersection_sync_init(void)
  *
  * You can use it to clean up any synchronization and other variables.
  *
- */
+ */ 
 void
 intersection_sync_cleanup(void)
 {
-  /* replace this default implementation with your own implementation 
-  KASSERT(intersectionSem != NULL);
-  sem_destroy(intersectionSem);
-  */
+  // lock destroy
+  lock_destroy(intersect_lock); 
+  
   lock_destroy(NE_lock);
   lock_destroy(NS_lock);
   lock_destroy(NW_lock);
@@ -167,8 +208,255 @@ intersection_sync_cleanup(void)
   lock_destroy(WN_lock);
   lock_destroy(WE_lock);
   lock_destroy(WS_lock);
+  
+  
+  // cv destroy
+  cv_destroy(NE_cv);
+  cv_destroy(NS_cv);
+  cv_destroy(NW_cv);
+  
+  cv_destroy(ES_cv);
+  cv_destroy(EW_cv);
+  cv_destroy(EN_cv);
+  
+  cv_destroy(SW_cv);
+  cv_destroy(SN_cv);
+  cv_destroy(SE_cv);
+  
+  cv_destroy(WN_cv);
+  cv_destroy(WE_cv);
+  cv_destroy(WS_cv);
 }
 
+struct cv * cur_cv(Direction origin, Direction destination){
+  if (origin == north && destination == east){
+    return NE_cv;  
+  }
+  else if (origin == north && destination == south){
+    return NS_cv; 
+  }
+  else if (origin == north && destination == west){
+    return NW_cv;  
+  }
+  else if (origin == east && destination == south){
+    return ES_cv; 
+  }
+  else if (origin == east && destination == west){
+    return EW_cv; 
+  }
+  else if (origin == east && destination == north){
+    return EN_cv; 
+  }
+  else if (origin == south && destination == west){
+    return SW_cv;
+  }
+  else if (origin == south && destination == north){
+    return SN_cv;
+  }
+  else if (origin == south && destination == east){
+    return SE_cv; 
+  }
+  else if (origin == west && destination == north){
+    return WN_cv;
+  }
+  else if (origin == west && destination == east){
+    return WE_cv;    
+  }
+  else if (origin == west && destination == south){
+    return WS_cv; 
+  }
+  else{
+    panic("traffic_simulation: thread_fork failed: %s\n", strerror(1));
+    return NULL; 
+  }
+}
+
+struct lock * cur_lock(Direction origin, Direction destination){
+  if (origin == north && destination == east){
+    return NE_lock;  
+  }
+  else if (origin == north && destination == south){
+    return NS_lock; 
+  }
+  else if (origin == north && destination == west){
+    return NW_lock;  
+  }
+  else if (origin == east && destination == south){
+    return ES_lock; 
+  }
+  else if (origin == east && destination == west){
+    return EW_lock; 
+  }
+  else if (origin == east && destination == north){
+    return EN_lock; 
+  }
+  else if (origin == south && destination == west){
+    return SW_lock;
+  }
+  else if (origin == south && destination == north){
+    return SN_lock;
+  }
+  else if (origin == south && destination == east){
+    return SE_lock; 
+  }
+  else if (origin == west && destination == north){
+    return WN_lock;
+  }
+  else if (origin == west && destination == east){
+    return WE_lock;    
+  }
+  else if (origin == west && destination == south){
+    return WS_lock; 
+  }
+  else{
+    panic("traffic_simulation: thread_fork failed: %s\n", strerror(1));
+    return NULL; 
+  }
+}
+
+
+void alter_counter(Direction origin, Direction destination, bool increment){
+  int tmp; 
+  if (increment){
+    tmp = 1; 
+  }
+  else {
+    tmp = -1; 
+  }
+  
+  if (origin == north && destination == east){
+    NE_counter = NE_counter + tmp; 
+  }
+  else if (origin == north && destination == south){
+    NS_counter = NS_counter + tmp; 
+  }
+  else if (origin == north && destination == west){
+    NW_counter = NW_counter + tmp;  
+  }
+  else if (origin == east && destination == south){
+    ES_counter = ES_counter + tmp; 
+  }
+  else if (origin == east && destination == west){
+    EW_counter = EW_counter + tmp;  
+  }
+  else if (origin == east && destination == north){
+    EN_counter = EN_counter + tmp;  
+  }
+  else if (origin == south && destination == west){
+    SW_counter = SW_counter + tmp; 
+  }
+  else if (origin == south && destination == north){
+    SN_counter = SN_counter + tmp; 
+  }
+  else if (origin == south && destination == east){
+    SE_counter = SE_counter + tmp; 
+  }
+  else if (origin == west && destination == north){
+    WN_counter = WN_counter + tmp; 
+  }
+  else if (origin == west && destination == east){
+    WE_counter = WE_counter + tmp;     
+  }
+  else if (origin == west && destination == south){
+    WS_counter = WS_counter + tmp;  
+  }
+  else{
+    panic("traffic_simulation: thread_fork failed: %s\n", strerror(1));
+  }
+}
+
+
+void wake_up_threads(Direction origin, Direction destination){
+  if(origin == north && destination == east){
+    cv_broadcast(ES_cv, ES_lock); 
+    cv_broadcast(EW_cv, EW_lock); 
+    cv_broadcast(SN_cv, SN_lock); 
+    cv_broadcast(SE_cv, SE_lock); 
+    cv_broadcast(SW_cv, SW_lock); 
+    cv_broadcast(WN_cv, WN_lock); 
+    cv_broadcast(WE_cv, WE_lock); 
+  }
+  else if (origin == north && destination == south){
+    cv_broadcast(ES_cv, ES_lock); 
+    cv_broadcast(EW_cv, EW_lock); 
+    cv_broadcast(SW_cv, SW_lock); 
+    cv_broadcast(WN_cv, WN_lock); 
+    cv_broadcast(WE_cv, WE_lock); 
+    cv_broadcast(WS_cv, WS_lock); 
+  }
+  else if (origin == north && destination == west){
+    cv_broadcast(SW_cv, SW_lock); 
+    cv_broadcast(EW_cv, EW_lock); 
+  }
+  else if (origin == east && destination == south){
+    cv_broadcast(NE_cv, NE_lock); 
+    cv_broadcast(NS_cv, NS_lock); 
+    cv_broadcast(SN_cv, SN_lock); 
+    cv_broadcast(SW_cv, SW_lock); 
+    cv_broadcast(WS_cv, WS_lock); 
+    cv_broadcast(WN_cv, WN_lock); 
+    cv_broadcast(WE_cv, WE_lock); 
+  }
+  else if (origin == east && destination == west){
+    cv_broadcast(NE_cv, NE_lock); 
+    cv_broadcast(NS_cv, NS_lock); 
+    cv_broadcast(NW_cv, NW_lock); 
+    cv_broadcast(SN_cv, SN_lock); 
+    cv_broadcast(SW_cv, SW_lock); 
+    cv_broadcast(WN_cv, WN_lock);  
+  }
+  else if (origin == east && destination == north){
+    cv_broadcast(SN_cv, SN_lock); 
+    cv_broadcast(WN_cv, WN_lock); 
+  }
+  else if (origin == south && destination == west){
+    cv_broadcast(NE_cv, NE_lock); 
+    cv_broadcast(NS_cv, NS_lock); 
+    cv_broadcast(NW_cv, NW_lock); 
+    cv_broadcast(ES_cv, ES_lock); 
+    cv_broadcast(EW_cv, EW_lock); 
+    cv_broadcast(WN_cv, WN_lock); 
+    cv_broadcast(WE_cv, WE_lock); 
+    
+  }
+  else if (origin == south && destination == north){
+    cv_broadcast(NE_cv, NE_lock); 
+    cv_broadcast(EN_cv, EN_lock); 
+    cv_broadcast(ES_cv, ES_lock); 
+    cv_broadcast(EW_cv, EW_lock); 
+    cv_broadcast(WN_cv, WN_lock); 
+    cv_broadcast(WE_cv, WE_lock); 
+  }
+  else if (origin == south && destination == east){
+    cv_broadcast(NE_cv, NE_lock); 
+    cv_broadcast(WE_cv, WE_lock); 
+  }
+  else if (origin == west && destination == north){
+    cv_broadcast(NE_cv, NE_lock); 
+    cv_broadcast(NS_cv, NS_lock); 
+    cv_broadcast(EN_cv, EN_lock); 
+    cv_broadcast(ES_cv, ES_lock); 
+    cv_broadcast(EW_cv, EW_lock); 
+    cv_broadcast(SN_cv, SN_lock); 
+    cv_broadcast(SW_cv, SW_lock); 
+  }
+  else if (origin == west && destination == east){
+    cv_broadcast(NE_cv, NE_lock); 
+    cv_broadcast(NS_cv, NS_lock); 
+    cv_broadcast(ES_cv, ES_lock); 
+    cv_broadcast(SN_cv, SN_lock); 
+    cv_broadcast(SE_cv, SE_lock); 
+    cv_broadcast(SW_cv, SW_lock); 
+  }
+  else if (origin == west && destination == south){
+    cv_broadcast(NS_cv, NS_lock); 
+    cv_broadcast(ES_cv, ES_lock); 
+  }
+  else{
+    panic("traffic_simulation: thread_fork failed: %s\n", strerror(1));
+  }
+  
+}
 
 /*
  * The simulation driver will call this function each time a vehicle
@@ -186,233 +474,27 @@ intersection_sync_cleanup(void)
 void
 intersection_before_entry(Direction origin, Direction destination) 
 {
-  /* replace this default implementation with your own implementation */
-  //(void)origin;  /* avoid compiler complaint about unused parameter */
-  //(void)destination; /* avoid compiler complaint about unused parameter */
-  //KASSERT(intersectionSem != NULL);
-  //P(intersectionSem);
   
-  KASSERT(NE_lock != NULL); 
-  KASSERT(NS_lock != NULL);
-  KASSERT(NW_lock != NULL);
-  
-  KASSERT(ES_lock != NULL);
-  KASSERT(EW_lock != NULL);
-  KASSERT(EN_lock != NULL);
-  
-  KASSERT(SW_lock != NULL);
-  KASSERT(SN_lock != NULL);
-  KASSERT(SE_lock != NULL);
-  
-  KASSERT(WN_lock != NULL);
-  KASSERT(WE_lock != NULL);
-  KASSERT(WS_lock != NULL);
-  
-  if (origin == north && destination == east){
-    // kprintf("LOCKING DIRECTION: NE\n"); 
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(ES_lock); 
-    // kprintf("LOCKED - ES\n");
-    lock_acquire(EW_lock);
-    // kprintf("LOCKED - EW\n"); 
-    lock_acquire(SN_lock);
-    // kprintf("LOCKED - SN\n"); 
-    lock_acquire(SE_lock); 
-    // kprintf("LOCKED - SE\n");
-    lock_acquire(SW_lock);
-    // kprintf("LOCKED - SW\n"); 
-    lock_acquire(WN_lock);
-    // kprintf("LOCKED - WN\n"); 
-    lock_acquire(WE_lock); 
-    // kprintf("LOCKED - WE\n");  
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock");
+  //kprintf("screw up : origin - %d, dest - %d\n", origin, destination); 
+  struct lock* tmp_lock = cur_lock(origin, destination); 
+  //kprintf("screw up1 : origin - %d, dest - %d\n", origin, destination); 
+  struct cv* tmp_cv = cur_cv(origin, destination); 
+  //kprintf("screw up 2: origin - %d, dest - %d\n", origin, destination); 
+  lock_acquire(tmp_lock); 
+  //kprintf("got tmp_lock : origin - %d, dest - %d\n", origin, destination); 
+  lock_acquire(intersect_lock);
+  //kprintf("got intersect_lock : origin - %d, dest - %d\n", origin, destination); 
+  while (!validCrossing(origin, destination)){
+      lock_release(intersect_lock); 
+      //kprintf("let intersect_lock go : origin - %d, dest - %d\n", origin, destination); 
+      cv_wait(tmp_cv, tmp_lock); 
+      lock_acquire(intersect_lock); 
   }
-  else if (origin == north && destination == south){
-    // kprintf("LOCKING DIRECTION: NS\n"); 
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(ES_lock);
-    // kprintf("LOCKED - ES\n"); 
-    lock_acquire(EW_lock);
-    // kprintf("LOCKED - EW\n"); 
-    lock_acquire(SW_lock);
-    // kprintf("LOCKED - SW\n"); 
-    lock_acquire(WN_lock);
-    // kprintf("LOCKED - WN\n");
-    lock_acquire(WE_lock);
-    // kprintf("LOCKED - WE\n"); 
-    lock_acquire(WS_lock);  
-    // kprintf("LOCKED - WS\n");     
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock");
-  }
-  else if (origin == north && destination == west){
-    // kprintf("LOCKING DIRECTION: NW\n"); 
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(SW_lock);
-    // kprintf("LOCKED - SW\n"); 
-    lock_acquire(EW_lock);
-    // kprintf("LOCKED - EW\n"); 
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock"); 
-  }
-  else if (origin == east && destination == south){
-    // kprintf("LOCKING DIRECTION: ES\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock");  
-    lock_acquire(NE_lock);
-    // kprintf("LOCKED - NE\n"); 
-    lock_acquire(NS_lock); 
-    // kprintf("LOCKED - NS\n");
-    lock_acquire(SN_lock);
-    // kprintf("LOCKED - SN\n"); 
-    lock_acquire(SW_lock);
-    // kprintf("LOCKED - SW\n"); 
-    lock_acquire(WS_lock);
-    // kprintf("LOCKED - WS\n"); 
-    lock_acquire(WN_lock);
-    // kprintf("LOCKED - WN\n"); 
-    lock_acquire(WE_lock);
-    // kprintf("LOCKED - WE\n");  
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock");
-  }
-  else if (origin == east && destination == west){
-    // kprintf("LOCKING DIRECTION: EW\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(NE_lock); 
-    // kprintf("LOCKED - NE\n");
-    lock_acquire(NS_lock);
-    // kprintf("LOCKED - NS\n"); 
-    lock_acquire(NW_lock);
-    // kprintf("LOCKED - NW\n"); 
-    lock_acquire(SN_lock);
-    // kprintf("LOCKED - SN\n");
-    lock_acquire(SW_lock);
-    // kprintf("LOCKED - SW\n"); 
-    lock_acquire(WN_lock);
-    // kprintf("LOCKED - WN\n");   
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock");
-  }
-  else if (origin == east && destination == north){
-    // kprintf("LOCKING DIRECTION: EN\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock");
-    lock_acquire(SN_lock);
-    // kprintf("LOCKED - SN\n"); 
-    lock_acquire(WN_lock); 
-    // kprintf("LOCKED - WN\n"); 
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock");
-  }
-  else if (origin == south && destination == west){
-    // kprintf("LOCKING DIRECTION: SW\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(NE_lock);
-    // kprintf("LOCKED - NE\n"); 
-    lock_acquire(NS_lock);
-    // kprintf("LOCKED - NS\n"); 
-    lock_acquire(NW_lock);
-    // kprintf("LOCKED - NW\n"); 
-    lock_acquire(ES_lock);
-    // kprintf("LOCKED - ES\n"); 
-    lock_acquire(EW_lock);
-    // kprintf("LOCKED - EW\n"); 
-    lock_acquire(WN_lock);
-    // kprintf("LOCKED - WN\n"); 
-    lock_acquire(WE_lock);
-    // kprintf("LOCKED - WE\n");
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock");
-  }
-  else if (origin == south && destination == north){
-    // kprintf("LOCKING DIRECTION: SN\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(NE_lock); 
-    // kprintf("LOCKED - NE\n");
-    lock_acquire(EN_lock);
-    // kprintf("LOCKED - EN\n"); 
-    lock_acquire(ES_lock);
-    // kprintf("LOCKED - ES\n"); 
-    lock_acquire(EW_lock);
-    // kprintf("LOCKED - EW\n");
-    lock_acquire(WN_lock);
-    // kprintf("LOCKED - WN\n"); 
-    lock_acquire(WE_lock);  
-    // kprintf("LOCKED - WE\n"); 
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock");
-  }
-  else if (origin == south && destination == east){
-    // kprintf("LOCKING DIRECTION: SE\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(NE_lock);
-    // kprintf("LOCKED - NE\n"); 
-    lock_acquire(WE_lock); 
-    // kprintf("LOCKED - WE\n");
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock"); 
-  }
-  else if (origin == west && destination == north){
-    // kprintf("LOCKING DIRECTION: WN\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(NE_lock); 
-    // kprintf("LOCKED - NE\n");
-    lock_acquire(NS_lock);
-    // kprintf("LOCKED - NS\n"); 
-    lock_acquire(EN_lock);
-    // kprintf("LOCKED - EN\n"); 
-    lock_acquire(ES_lock);
-    // kprintf("LOCKED - ES\n"); 
-    lock_acquire(EW_lock);
-    // kprintf("LOCKED - EW\n"); 
-    lock_acquire(SN_lock); 
-    // kprintf("LOCKED - SN\n");
-    lock_acquire(SW_lock); 
-    // kprintf("LOCKED - SW\n"); 
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock"); 
-  }
-  else if (origin == west && destination == east){
-    // kprintf("LOCKING DIRECTION: WE\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(NE_lock);
-    // kprintf("LOCKED - NE\n"); 
-    lock_acquire(NS_lock);
-    // kprintf("LOCKED - NS\n"); 
-    lock_acquire(ES_lock);
-    // kprintf("LOCKED - ES\n"); 
-    lock_acquire(SN_lock);
-    // kprintf("LOCKED - SN\n");
-    lock_acquire(SE_lock);
-    // kprintf("LOCKED - SE\n"); 
-    lock_acquire(SW_lock);
-    // kprintf("LOCKED - SW\n");  
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock");  
-  }
-  else if (origin == west && destination == south){
-    // kprintf("LOCKING DIRECTION: WS\n");
-    lock_acquire(intersect_lock); 
-    // kprintf("LOCKED - intersect_lock"); 
-    lock_acquire(NS_lock);
-    // kprintf("LOCKED - NS\n"); 
-    lock_acquire(ES_lock);
-    // kprintf("LOCKED - ES\n");  
-    lock_release(intersect_lock); 
-    // kprintf("UNLOCKED - intersect_lock"); 
-  }
+  alter_counter(origin, destination, true); 
+  //kprintf("entering: origin - %d, dest - %d\n", origin, destination); 
+  lock_release(intersect_lock); 
 }
+
 
 
 /*
@@ -428,183 +510,13 @@ intersection_before_entry(Direction origin, Direction destination)
 
 void
 intersection_after_exit(Direction origin, Direction destination) 
-{
-  /* replace this default implementation with your own implementation */
-  (void)origin;  /* avoid compiler complaint about unused parameter */
-  (void)destination; /* avoid compiler complaint about unused parameter */
-  //KASSERT(intersectionSem != NULL);
-  //V(intersectionSem);
-  
-  KASSERT(NE_lock != NULL); 
-  KASSERT(NS_lock != NULL);
-  KASSERT(NW_lock != NULL);
-  
-  KASSERT(ES_lock != NULL);
-  KASSERT(EW_lock != NULL);
-  KASSERT(EN_lock != NULL);
-  
-  KASSERT(SW_lock != NULL);
-  KASSERT(SN_lock != NULL);
-  KASSERT(SE_lock != NULL);
-  
-  KASSERT(WN_lock != NULL);
-  KASSERT(WE_lock != NULL);
-  KASSERT(WS_lock != NULL);
-  
-  if (origin == north && destination == east){
-    // kprintf("UNLOCKING DIRECTION: NE\n");
-    lock_release(ES_lock);
-    // kprintf("UNLOCKED - ES\n"); 
-    lock_release(EW_lock);
-    // kprintf("UNLOCKED - EW\n"); 
-    lock_release(SN_lock);
-    // kprintf("UNLOCKED - SN\n"); 
-    lock_release(SE_lock);
-    // kprintf("UNLOCKED - WE\n"); 
-    lock_release(SW_lock);
-    // kprintf("UNLOCKED - SW\n"); 
-    lock_release(WN_lock); 
-    // kprintf("UNLOCKED - WN\n");
-    lock_release(WE_lock); 
-    // kprintf("UNLOCKED - WE\n"); 
-  }
-  else if (origin == north && destination == south){
-    // kprintf("UNLOCKING DIRECTION: NS\n");
-    lock_release(ES_lock);
-    // kprintf("UNLOCKED - ES\n"); 
-    lock_release(EW_lock);
-    // kprintf("UNLOCKED - EW\n"); 
-    lock_release(SW_lock);
-    // kprintf("UNLOCKED - SW\n"); 
-    lock_release(WN_lock);
-    // kprintf("UNLOCKED - WN\n");
-    lock_release(WE_lock);
-    // kprintf("UNLOCKED - WE\n"); 
-    lock_release(WS_lock);  
-    // kprintf("UNLOCKED - WS\n"); 
-  }
-  else if (origin == north && destination == west){
-    // kprintf("UNLOCKING DIRECTION: NW\n");
-    lock_release(SW_lock);
-    // kprintf("UNLOCKED - SW\n"); 
-    lock_release(EW_lock);
-    // kprintf("UNLOCKED - EW\n");  
-  }
-  else if (origin == east && destination == south){
-    // kprintf("UNLOCKING DIRECTION: ES\n");
-    lock_release(NE_lock);
-    // kprintf("UNLOCKED - NE\n"); 
-    lock_release(NS_lock); 
-    // kprintf("UNLOCKED - NS\n");
-    lock_release(SN_lock);
-    // kprintf("UNLOCKED - SN\n"); 
-    lock_release(SW_lock);
-    // kprintf("UNLOCKED - SW\n"); 
-    lock_release(WS_lock);
-    // kprintf("UNLOCKED - WS\n"); 
-    lock_release(WN_lock);
-    // kprintf("UNLOCKED - WN\n"); 
-    lock_release(WE_lock);
-    // kprintf("UNLOCKED - WE\n");  
-  }
-  else if (origin == east && destination == west){
-    // kprintf("UNLOCKING DIRECTION: EW\n");
-    lock_release(NE_lock);
-    // kprintf("UNLOCKED - NE\n"); 
-    lock_release(NS_lock);
-    // kprintf("UNLOCKED - NS\n"); 
-    lock_release(NW_lock);
-    // kprintf("UNLOCKED - NW\n"); 
-    lock_release(SN_lock);
-    
-    // kprintf("UNLOCKED - SN\n");
-    lock_release(SW_lock);
-    // kprintf("UNLOCKED - SW\n"); 
-    lock_release(WN_lock);
-    // kprintf("UNLOCKED - WN\n");   
-  }
-  else if (origin == east && destination == north){
-    // kprintf("UNLOCKING DIRECTION: EN\n");
-    lock_release(SN_lock);
-    // kprintf("UNLOCKED - SN\n"); 
-    lock_release(WN_lock);
-    // kprintf("UNLOCKED - WN\n");  
-  }
-  else if (origin == south && destination == west){
-    // kprintf("UNLOCKING DIRECTION: SW\n");
-    lock_release(NE_lock);
-    // kprintf("UNLOCKED - NE\n"); 
-    lock_release(NS_lock);
-    // kprintf("UNLOCKED - NS\n"); 
-    lock_release(NW_lock);
-    // kprintf("UNLOCKED - NW\n"); 
-    lock_release(ES_lock);
-    // kprintf("UNLOCKED - ES\n"); 
-    lock_release(EW_lock);
-    // kprintf("UNLOCKED - EW\n"); 
-    lock_release(WN_lock);
-    // kprintf("UNLOCKED - WN\n"); 
-    lock_release(WE_lock);
-    // kprintf("UNLOCKED - WE\n");  
-  }
-  else if (origin == south && destination == north){
-    // kprintf("UNLOCKING DIRECTION: SN\n");
-    lock_release(NE_lock); 
-    // kprintf("UNLOCKED - NE\n");
-    lock_release(EN_lock);
-    // kprintf("UNLOCKED - EN\n"); 
-    lock_release(ES_lock);
-    // kprintf("UNLOCKED - ES\n"); 
-    lock_release(EW_lock);
-    // kprintf("UNLOCKED - EW\n");
-    lock_release(WN_lock);
-    // kprintf("UNLOCKED - WN\n"); 
-    lock_release(WE_lock);
-    // kprintf("UNLOCKED - WE\n");  
-  }
-  else if (origin == south && destination == east){
-    // kprintf("UNLOCKING DIRECTION: SE\n");
-    lock_release(NE_lock); 
-    lock_release(WE_lock);
-    // kprintf("UNLOCKED - SE\n");  
-  }
-  else if (origin == west && destination == north){
-    // kprintf("UNLOCKING DIRECTION: WN\n");
-    lock_release(NE_lock); 
-    // kprintf("UNLOCKED - NE\n");
-    lock_release(NS_lock);
-    // kprintf("UNLOCKED - NS\n"); 
-    lock_release(EN_lock);
-    // kprintf("UNLOCKED - EN\n"); 
-    lock_release(ES_lock);
-    // kprintf("UNLOCKED - ES\n"); 
-    lock_release(EW_lock);
-    // kprintf("UNLOCKED - EW\n"); 
-    lock_release(SN_lock);
-    // kprintf("UNLOCKED - SN\n"); 
-    lock_release(SW_lock);
-    // kprintf("UNLOCKED - SW\n");  
-  }
-  else if (origin == west && destination == east){
-    // kprintf("UNLOCKING DIRECTION: WE\n");
-    lock_release(NE_lock); 
-    // kprintf("UNLOCKED - NE\n");
-    lock_release(NS_lock);
-    // kprintf("UNLOCKED - NS\n"); 
-    lock_release(ES_lock);
-    // kprintf("UNLOCKED - ES\n"); 
-    lock_release(SN_lock);
-    // kprintf("UNLOCKED - SN\n");
-    lock_release(SE_lock);
-    // kprintf("UNLOCKED - SE\n"); 
-    lock_release(SW_lock);
-    // kprintf("UNLOCKED - SW\n");   
-  }
-  else if (origin == west && destination == south){
-    // kprintf("UNLOCKING DIRECTION: WS\n");
-    lock_release(NS_lock);
-    // kprintf("UNLOCKED - NS\n"); 
-    lock_release(ES_lock); 
-    // kprintf("UNLOCKED - ES\n"); 
-  }  
+{  
+  //kprintf("exiting: origin - %d, dest - %d\n", origin, destination); 
+  struct lock* tmp_lock = cur_lock(origin, destination);
+  lock_acquire(intersect_lock); 
+  alter_counter(origin, destination, false); 
+  lock_release(intersect_lock); 
+  wake_up_threads(origin, destination);  
+  lock_release(tmp_lock); 
+  //kprintf("released: origin - %d, dest - %d\n", origin, destination); 
 }
