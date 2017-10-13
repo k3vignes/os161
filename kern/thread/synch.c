@@ -294,6 +294,7 @@ cv_wait(struct cv *cv, struct lock *lock)
     // write this 
 	KASSERT(cv != NULL); 
 	KASSERT(lock != NULL);
+	
 	wchan_lock(cv->cv_wchan);
 	lock_release(lock);
 	wchan_sleep(cv->cv_wchan);
@@ -306,6 +307,7 @@ cv_signal(struct cv *cv, struct lock *lock)
     // Write this 
 	KASSERT(cv != NULL);	
 	KASSERT(lock != NULL);
+	
 	wchan_wakeone(cv->cv_wchan);
 }
 
@@ -315,6 +317,7 @@ cv_broadcast(struct cv *cv, struct lock *lock)
 	// Write this
 	KASSERT(cv != NULL);	
 	KASSERT(lock != NULL);
+	
 	wchan_wakeall(cv->cv_wchan);
 
 }

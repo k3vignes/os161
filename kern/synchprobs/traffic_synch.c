@@ -506,7 +506,7 @@ void wake_up_threads(Direction origin, Direction destination){
 
 void
 intersection_before_entry(Direction origin, Direction destination) 
-{ 
+{  
   struct lock* tmp_lock = cur_lock(origin, destination); 
   struct cv* tmp_cv = cur_cv(origin, destination); 
   lock_acquire(tmp_lock); 
