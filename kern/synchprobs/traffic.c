@@ -93,8 +93,8 @@ static struct semaphore *perf_mutex;
 #define TICK_MILLISEC (LT_GRANULARITY/1000)
 
 /* simulation start and end time */
-time_t start_sec, end_sec, temp_sec;
-uint32_t start_nsec, end_nsec, temp_nsec, avg_nsec;
+time_t start_sec, end_sec;
+uint32_t start_nsec, end_nsec;
 
 /* bias direction, for arrival biasing */
 Direction heavy_direction;
