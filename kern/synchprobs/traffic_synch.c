@@ -144,6 +144,38 @@ bool validCrossing(Direction origin, Direction destination){
 void
 intersection_sync_init(void)
 {
+    KASSERT(NE_lock == NULL); 
+    KASSERT(NS_lock == NULL); 
+    KASSERT(NW_lock == NULL); 
+    
+    KASSERT(ES_lock == NULL); 
+    KASSERT(EW_lock == NULL); 
+    KASSERT(EN_lock == NULL); 
+    
+    KASSERT(SW_lock == NULL); 
+    KASSERT(SN_lock == NULL); 
+    KASSERT(SE_lock == NULL); 
+    
+    KASSERT(WN_lock == NULL); 
+    KASSERT(WE_lock == NULL); 
+    KASSERT(WS_lock == NULL); 
+    
+    KASSERT(NE_cv == NULL); 
+    KASSERT(NS_cv == NULL); 
+    KASSERT(NW_cv == NULL); 
+    
+    KASSERT(ES_cv == NULL); 
+    KASSERT(EW_cv == NULL); 
+    KASSERT(EN_cv == NULL); 
+    
+    KASSERT(SW_cv == NULL); 
+    KASSERT(SN_cv == NULL); 
+    KASSERT(SE_cv == NULL); 
+    
+    KASSERT(WN_cv == NULL); 
+    KASSERT(WE_cv == NULL); 
+    KASSERT(WS_cv == NULL); 
+    
     // lock create
     intersect_lock = lock_create("intersect_lock");
     NE_lock = lock_create("NE_lock");
@@ -385,51 +417,52 @@ void wake_up_threads(Direction origin, Direction destination){
     cv_broadcast(WS_cv, WS_lock); 
   }
   else if (origin == north && destination == west){
-    cv_broadcast(SW_cv, SW_lock); 
     cv_broadcast(EW_cv, EW_lock); 
+    cv_broadcast(SW_cv, SW_lock); 
   }
   else if (origin == east && destination == south){
-    cv_broadcast(NE_cv, NE_lock); 
-    cv_broadcast(NS_cv, NS_lock); 
     cv_broadcast(SN_cv, SN_lock); 
     cv_broadcast(SW_cv, SW_lock); 
     cv_broadcast(WS_cv, WS_lock); 
     cv_broadcast(WN_cv, WN_lock); 
     cv_broadcast(WE_cv, WE_lock); 
+    cv_broadcast(NE_cv, NE_lock); 
+    cv_broadcast(NS_cv, NS_lock);
   }
   else if (origin == east && destination == west){
+    cv_broadcast(SN_cv, SN_lock); 
+    cv_broadcast(SW_cv, SW_lock); 
+    cv_broadcast(WN_cv, WN_lock); 
     cv_broadcast(NE_cv, NE_lock); 
     cv_broadcast(NS_cv, NS_lock); 
     cv_broadcast(NW_cv, NW_lock); 
-    cv_broadcast(SN_cv, SN_lock); 
-    cv_broadcast(SW_cv, SW_lock); 
-    cv_broadcast(WN_cv, WN_lock);  
   }
   else if (origin == east && destination == north){
     cv_broadcast(SN_cv, SN_lock); 
     cv_broadcast(WN_cv, WN_lock); 
   }
   else if (origin == south && destination == west){
+    cv_broadcast(WN_cv, WN_lock); 
+    cv_broadcast(WE_cv, WE_lock); 
     cv_broadcast(NE_cv, NE_lock); 
     cv_broadcast(NS_cv, NS_lock); 
     cv_broadcast(NW_cv, NW_lock); 
     cv_broadcast(ES_cv, ES_lock); 
     cv_broadcast(EW_cv, EW_lock); 
-    cv_broadcast(WN_cv, WN_lock); 
-    cv_broadcast(WE_cv, WE_lock); 
     
   }
   else if (origin == south && destination == north){
+    cv_broadcast(WN_cv, WN_lock); 
+    cv_broadcast(WE_cv, WE_lock); 
     cv_broadcast(NE_cv, NE_lock); 
     cv_broadcast(EN_cv, EN_lock); 
     cv_broadcast(ES_cv, ES_lock); 
     cv_broadcast(EW_cv, EW_lock); 
-    cv_broadcast(WN_cv, WN_lock); 
-    cv_broadcast(WE_cv, WE_lock); 
   }
   else if (origin == south && destination == east){
+    cv_broadcast(WE_cv, WE_lock);
     cv_broadcast(NE_cv, NE_lock); 
-    cv_broadcast(WE_cv, WE_lock); 
+     
   }
   else if (origin == west && destination == north){
     cv_broadcast(NE_cv, NE_lock); 
@@ -473,25 +506,17 @@ void wake_up_threads(Direction origin, Direction destination){
 
 void
 intersection_before_entry(Direction origin, Direction destination) 
-{
-  
-  //kprintf("screw up : origin - %d, dest - %d\n", origin, destination); 
+{ 
   struct lock* tmp_lock = cur_lock(origin, destination); 
-  //kprintf("screw up1 : origin - %d, dest - %d\n", origin, destination); 
   struct cv* tmp_cv = cur_cv(origin, destination); 
-  //kprintf("screw up 2: origin - %d, dest - %d\n", origin, destination); 
   lock_acquire(tmp_lock); 
-  //kprintf("got tmp_lock : origin - %d, dest - %d\n", origin, destination); 
   lock_acquire(intersect_lock);
-  //kprintf("got intersect_lock : origin - %d, dest - %d\n", origin, destination); 
   while (!validCrossing(origin, destination)){
       lock_release(intersect_lock); 
-      //kprintf("let intersect_lock go : origin - %d, dest - %d\n", origin, destination); 
       cv_wait(tmp_cv, tmp_lock); 
       lock_acquire(intersect_lock); 
   }
   alter_counter(origin, destination, true); 
-  //kprintf("entering: origin - %d, dest - %d\n", origin, destination); 
   lock_release(intersect_lock); 
 }
 
@@ -510,13 +535,11 @@ intersection_before_entry(Direction origin, Direction destination)
 
 void
 intersection_after_exit(Direction origin, Direction destination) 
-{  
-  //kprintf("exiting: origin - %d, dest - %d\n", origin, destination); 
+{   
   struct lock* tmp_lock = cur_lock(origin, destination);
   lock_acquire(intersect_lock); 
   alter_counter(origin, destination, false); 
   lock_release(intersect_lock); 
   wake_up_threads(origin, destination);  
   lock_release(tmp_lock); 
-  //kprintf("released: origin - %d, dest - %d\n", origin, destination); 
 }
