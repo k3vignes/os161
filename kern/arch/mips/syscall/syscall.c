@@ -187,12 +187,14 @@ syscall(struct trapframe *tf)
  * Thus, you can trash it and do things another way if you prefer.
  */
 void
-enter_forked_process(struct trapframe *tf)
+enter_forked_process(void *tf, unsigned long num)
 {
     #if OPT_A2
-    tf->tf_vo = 0; 
-    tf->tf_epc += 4;
-    curthread->t_stack = tf; 
-	mips_usermode();
+    num = 2; // keep num distracted
+    struct trapframe *trapf = tf; 
+    trapf->tf_v0 = 0; 
+    trapf->tf_epc += 4;
+    curthread->t_stack = trapf; 
+	mips_usermode(trapf);
 	#endif /* OPT_A2 */
 }
