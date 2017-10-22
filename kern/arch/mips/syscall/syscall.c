@@ -35,6 +35,7 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
+#include "opt-A2.h"
 
 
 /*
@@ -121,7 +122,11 @@ syscall(struct trapframe *tf)
 	  panic("unexpected return from sys__exit");
 	  break;
 	case SYS_getpid:
+	  #if OPT_A2
+	  err = sys_getpid(); 
+	  #else
 	  err = sys_getpid((pid_t *)&retval);
+	  #endif /* OPT_A2 */ 
 	  break;
 	case SYS_waitpid:
 	  err = sys_waitpid((pid_t)tf->tf_a0,
@@ -129,6 +134,11 @@ syscall(struct trapframe *tf)
 			    (int)tf->tf_a2,
 			    (pid_t *)&retval);
 	  break;
+	#if OPT_A2
+	case SYS_fork: 
+	  err = sys__fork(tf); 
+	break; 
+	#endif /* OPT_A2 */ 
 #endif // UW
 
 	    /* Add stuff here */
@@ -179,5 +189,10 @@ syscall(struct trapframe *tf)
 void
 enter_forked_process(struct trapframe *tf)
 {
-	(void)tf;
+    #if OPT_A2
+    tf->tf_vo = 0; 
+    tf->tf_epc += 4;
+    curthread->t_stack = tf; 
+	mips_usermode();
+	#endif /* OPT_A2 */
 }

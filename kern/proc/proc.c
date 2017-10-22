@@ -50,12 +50,23 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
+#if OPT_A2
+#include "array.h" 
+#endif /* OPT_A2 */
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
 
+#if OPT_A2
+struct exit_struct{
+    pid_t pid; 
+    unsigned exit_status; 
+    struct lock *wait_lock; 
+    bool exited; 
+};
+#endif /* OPT_A2 */
 /*
  * Mechanism for making the kernel menu thread sleep while processes are running
  */
@@ -67,7 +78,17 @@ static volatile unsigned int proc_count;
 static struct semaphore *proc_count_mutex;
 /* used to signal the kernel menu thread when there are no processes */
 struct semaphore *no_proc_sem;   
+#if OPT_A2
+static volatile unsigned int proc_pid; // NEED TO CHANGE THIS SO THAT WE REUSE PIDS
+struct array *processes; // need to check whether or not to make volatile 
+struct array *process_exits; // need to check whether or not to make volatile 
+static struct lock *processes_lock; 
+static struct lock *process_exits_lock; 
+
+#endif /* OPT_A2 */
+
 #endif  // UW
+
 
 
 
@@ -95,7 +116,7 @@ proc_create(const char *name)
 
 	/* VM fields */
 	proc->p_addrspace = NULL;
-
+    
 	/* VFS fields */
 	proc->p_cwd = NULL;
 
@@ -163,6 +184,21 @@ proc_destroy(struct proc *proc)
 	}
 #endif // UW
 
+    #if OPT_A2
+	release_wait_lock(proc->pid); 
+	lock_acquire(processes_lock); 
+	int index = find_index_processes(proc->pid); 
+	array_remove(processes, index); 
+	lock_release(processes_lock); 
+	
+	lock_acquire(process_exits_lock); 
+	struct exit_struct *tmp = find_exit_struct(proc->pid);
+	tmp->exited = true; 
+	lock_release(process_exits_lock);
+	
+	
+    #endif /* OPT_A2 */
+    
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
@@ -194,11 +230,19 @@ void
 proc_bootstrap(void)
 {
   kproc = proc_create("[kernel]");
+  kproc->pid = -1; 
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
   }
 #ifdef UW
   proc_count = 0;
+  #if OPT_A2
+  proc_pid = 0; 
+  processes = array_create(); 
+  process_exits = array_create(); 
+  processes_lock = lock_create("processes_lock"); 
+  process_exits_lock = lock_create("process_exits_lock"); 
+  #endif /* OPT_A2 */
   proc_count_mutex = sem_create("proc_count_mutex",1);
   if (proc_count_mutex == NULL) {
     panic("could not create proc_count_mutex semaphore\n");
@@ -221,11 +265,12 @@ proc_create_runprogram(const char *name)
 {
 	struct proc *proc;
 	char *console_path;
-
+    
 	proc = proc_create(name);
 	if (proc == NULL) {
 		return NULL;
 	}
+	
 
 #ifdef UW
 	/* open the console - this should always succeed */
@@ -268,7 +313,32 @@ proc_create_runprogram(const char *name)
            are created using a call to proc_create_runprogram  */
 	P(proc_count_mutex); 
 	proc_count++;
+	#if OPT_A2
+	proc->children = array_create(); 
+	proc->pid = proc_pid; 
+	proc_pid++;     // NEED TO FIX THIS PID SHIT
+	#endif /* OPT_A2 */
 	V(proc_count_mutex);
+	
+	#if OPT_A2
+	struct exit_struct *proc_exit;
+	proc_exit = kmalloc(sizeof(*proc_exit)); 
+	KASSERT(proc_exit != NULL); 
+	proc_exit->pid = proc->pid; 
+	proc_exit->exit_status = 4;
+	proc_exit->wait_lock = lock_create(proc->p_name); 
+	
+	lock_acquire(process_exits_lock); 
+	array_add(process_exits, proc_exit, NULL);
+	lock_release(process_exits_lock);
+	
+	lock_acquire(processes_lock); 
+	array_add(processes, proc, NULL);
+	lock_release(processes_lock);
+	
+	lock_acquire(proc_exit->wait_lock); 
+	#endif /* OPT_A2 */
+	
 #endif // UW
 
 	return proc;
@@ -364,3 +434,77 @@ curproc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+#if OPT_A2
+int find_index_exits(pid_t pid){
+    struct exit_struct * tmp;
+    int index = -1; 
+    lock_acquire(process_exits_lock); 
+    int len = array_num(process_exits); 
+    for (int i = 0; i < len; i++){
+        tmp = array_get(process_exits, i); 
+        if (tmp->pid == pid){
+            index = i; 
+            break; 
+        }
+    }
+    lock_release(process_exits_lock); 
+    KASSERT(index >= 0);
+    return index; 
+}
+
+int find_index_processes(pid_t pid){
+    struct proc * tmp;
+    int index = -1; 
+    lock_acquire(processes_lock); 
+    int len = array_num(processes); 
+    for (int i = 0; i < len; i++){
+        tmp = array_get(processes, i); 
+        if (tmp->pid == pid){
+            index = i; 
+            break; 
+        }
+    }
+    lock_release(processes_lock); 
+    KASSERT(index >= 0);
+    return index; 
+}
+
+struct exit_struct * find_exit_struct(pid_t pid){
+    int index = find_index_exits(pid); 
+    struct exit_struct * tmp = array_get(process_exits, index);
+    return tmp; 
+}  
+
+
+int get_wait_lock(pid_t pid){
+    struct exit_struct *tmp = find_exit_struct(pid); 
+    lock_acquire(tmp->wait_lock); 
+    return tmp->exit_status; 
+}
+
+void release_wait_lock(pid_t pid){
+    struct exit_struct * tmp = find_exit_struct(pid); 
+    lock_release(tmp->wait_lock);
+}
+
+void post_exitcode(pid_t pid, int exitcode){
+    struct exit_struct * tmp = find_exit_struct(pid); 
+    tmp->exit_status = exitcode;
+}
+
+void destroy_exit_struct(pid_t pid){
+    int index = find_index_exits(pid); 
+    struct exit_struct * tmp = find_exit_struct(pid);
+    lock_destroy(tmp->wait_lock); 
+    kfree(tmp); // MIGHT NOT NEED THIS 
+    array_remove(process_exits, index);
+    lock_release(process_exits_lock);
+}
+
+bool hasExited(pid_t pid){
+    struct exit_struct *tmp = find_exit_struct(pid); 
+    return tmp->exited; 
+}
+
+#endif /* OPT_A2 */

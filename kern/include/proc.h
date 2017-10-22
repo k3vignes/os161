@@ -38,6 +38,8 @@
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
+#include "opt-A2.h"
+#include <mips/trapframe.h> // added by me
 
 struct addrspace;
 struct vnode;
@@ -50,6 +52,10 @@ struct semaphore;
  */
 struct proc {
 	char *p_name;			/* Name of this process */
+	#if OPT_A2
+	    pid_t pid;              /* Pid  (added by me) */
+	    struct array *children;   
+	#endif /* OPT_A2 */
 	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
 
@@ -70,6 +76,20 @@ struct proc {
 
 	/* add more material here as needed */
 };
+
+#if OPT_A2
+
+int find_index_exits(pid_t pid);
+int find_index_processes(pid_t pid);
+struct exit_struct * find_exit_struct(pid_t pid);
+int get_wait_lock(pid_t pid);
+void release_wait_lock(pid_t pid);
+void post_exitcode(pid_t pid, int exitcode);
+void destroy_exit_struct(pid_t pid);
+bool hasExited(pid_t pid);
+bool isChild(pid_t pid);
+
+#endif /* OPT_A2 */
 
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;
