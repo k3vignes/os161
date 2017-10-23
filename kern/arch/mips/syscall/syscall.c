@@ -36,6 +36,7 @@
 #include <current.h>
 #include <syscall.h>
 #include "opt-A2.h"
+#include "proc.h"
 
 
 /*
@@ -136,7 +137,8 @@ syscall(struct trapframe *tf)
 	  break;
 	#if OPT_A2
 	case SYS_fork: 
-	  err = sys__fork(tf); 
+	  retval = sys__fork(tf); 
+	  err = 0; 
 	break; 
 	#endif /* OPT_A2 */ 
 #endif // UW
@@ -190,11 +192,20 @@ void
 enter_forked_process(void *tf, unsigned long num)
 {
     #if OPT_A2
-    num = 2; // keep num distracted
-    struct trapframe *trapf = tf; 
-    trapf->tf_v0 = 0; 
-    trapf->tf_epc += 4;
-    curthread->t_stack = trapf; 
-	mips_usermode(trapf);
+    num = 2; // distract compiler
+    struct proc* p = curproc; 
+	get_wait_lock(p->pid);   // might be possible that the parent exits before this runs
+    struct thread* t; 
+    t = curthread; 
+    struct trapframe trapf = *((struct trapframe *)tf); 
+    trapf.tf_v0 = 0; 
+    trapf.tf_a3 = 0; 
+    trapf.tf_epc += 4; 
+     
+    //newtrap->tf_v0 = 0; 
+    //newtrap->tf_a3 = 0;  // not sure of this line
+    //newtrap->tf_epc += 4;
+    //curthread->t_stack = newtrap; //might need this line
+	mips_usermode(&trapf);
 	#endif /* OPT_A2 */
 }

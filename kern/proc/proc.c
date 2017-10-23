@@ -51,7 +51,9 @@
 #include <synch.h>
 #include <kern/fcntl.h>  
 #if OPT_A2
-#include "array.h" 
+#include "array.h"
+#include "kern/wait.h" 
+#include "kern/limits.h"
 #endif /* OPT_A2 */
 
 /*
@@ -141,7 +143,12 @@ proc_destroy(struct proc *proc)
          * be defined because the calling thread may have already detached itself
          * from the process.
 	 */
-
+    
+    struct thread *cur; // delete
+	cur = curthread; // delete
+	struct proc *cur_proc; //delete
+	cur_proc = curproc; // delete
+	
 	KASSERT(proc != NULL);
 	KASSERT(proc != kproc);
 
@@ -184,18 +191,11 @@ proc_destroy(struct proc *proc)
 	}
 #endif // UW
 
-    #if OPT_A2
-	release_wait_lock(proc->pid); 
+    #if OPT_A2 
 	lock_acquire(processes_lock); 
 	int index = find_index_processes(proc->pid); 
 	array_remove(processes, index); 
 	lock_release(processes_lock); 
-	
-	lock_acquire(process_exits_lock); 
-	struct exit_struct *tmp = find_exit_struct(proc->pid);
-	tmp->exited = true; 
-	lock_release(process_exits_lock);
-	
 	
     #endif /* OPT_A2 */
     
@@ -203,6 +203,7 @@ proc_destroy(struct proc *proc)
 	spinlock_cleanup(&proc->p_lock);
 
 	kfree(proc->p_name);
+	release_wait_lock(proc->pid);
 	kfree(proc);
 
 #ifdef UW
@@ -230,15 +231,16 @@ void
 proc_bootstrap(void)
 {
   kproc = proc_create("[kernel]");
-  kproc->pid = -1; 
+  kproc->pid = 0; 
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
   }
 #ifdef UW
   proc_count = 0;
   #if OPT_A2
-  proc_pid = 0; 
+  proc_pid = __PID_MIN; 
   processes = array_create(); 
+  array_add(processes, kproc, NULL); 
   process_exits = array_create(); 
   processes_lock = lock_create("processes_lock"); 
   process_exits_lock = lock_create("process_exits_lock"); 
@@ -316,6 +318,7 @@ proc_create_runprogram(const char *name)
 	#if OPT_A2
 	proc->children = array_create(); 
 	proc->pid = proc_pid; 
+	proc->parent_pid = curproc->pid; 
 	proc_pid++;     // NEED TO FIX THIS PID SHIT
 	#endif /* OPT_A2 */
 	V(proc_count_mutex);
@@ -336,7 +339,6 @@ proc_create_runprogram(const char *name)
 	array_add(processes, proc, NULL);
 	lock_release(processes_lock);
 	
-	lock_acquire(proc_exit->wait_lock); 
 	#endif /* OPT_A2 */
 	
 #endif // UW
@@ -438,8 +440,7 @@ curproc_setas(struct addrspace *newas)
 #if OPT_A2
 int find_index_exits(pid_t pid){
     struct exit_struct * tmp;
-    int index = -1; 
-    lock_acquire(process_exits_lock); 
+    int index = -1;  
     int len = array_num(process_exits); 
     for (int i = 0; i < len; i++){
         tmp = array_get(process_exits, i); 
@@ -448,7 +449,6 @@ int find_index_exits(pid_t pid){
             break; 
         }
     }
-    lock_release(process_exits_lock); 
     KASSERT(index >= 0);
     return index; 
 }
@@ -456,7 +456,6 @@ int find_index_exits(pid_t pid){
 int find_index_processes(pid_t pid){
     struct proc * tmp;
     int index = -1; 
-    lock_acquire(processes_lock); 
     int len = array_num(processes); 
     for (int i = 0; i < len; i++){
         tmp = array_get(processes, i); 
@@ -465,14 +464,23 @@ int find_index_processes(pid_t pid){
             break; 
         }
     }
-    lock_release(processes_lock); 
     KASSERT(index >= 0);
     return index; 
 }
 
+struct proc * find_proc_struct(pid_t pid){
+    lock_acquire(processes_lock);  
+    int index = find_index_processes(pid);
+    struct proc * tmp = array_get(processes, index); 
+    lock_release(processes_lock); 
+    return tmp; 
+}
+
 struct exit_struct * find_exit_struct(pid_t pid){
     int index = find_index_exits(pid); 
+    lock_acquire(process_exits_lock);
     struct exit_struct * tmp = array_get(process_exits, index);
+    lock_release(process_exits_lock); 
     return tmp; 
 }  
 
@@ -484,13 +492,18 @@ int get_wait_lock(pid_t pid){
 }
 
 void release_wait_lock(pid_t pid){
+    struct thread * cur; 
+    cur = curthread; 
     struct exit_struct * tmp = find_exit_struct(pid); 
     lock_release(tmp->wait_lock);
 }
 
 void post_exitcode(pid_t pid, int exitcode){
+    struct thread * cur; 
+    cur = curthread; 
     struct exit_struct * tmp = find_exit_struct(pid); 
-    tmp->exit_status = exitcode;
+    tmp->exit_status = _MKWAIT_EXIT(exitcode);
+    tmp->exited = true; 
 }
 
 void destroy_exit_struct(pid_t pid){

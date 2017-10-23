@@ -55,6 +55,7 @@ struct proc {
 	#if OPT_A2
 	    pid_t pid;              /* Pid  (added by me) */
 	    struct array *children;   
+	    pid_t parent_pid; 
 	#endif /* OPT_A2 */
 	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
@@ -81,6 +82,7 @@ struct proc {
 
 int find_index_exits(pid_t pid);
 int find_index_processes(pid_t pid);
+struct proc * find_proc_struct(pid_t pid);
 struct exit_struct * find_exit_struct(pid_t pid);
 int get_wait_lock(pid_t pid);
 void release_wait_lock(pid_t pid);

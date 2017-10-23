@@ -13,30 +13,32 @@
 #include "array.h"
 #include "limits.h"
 
-
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
 
 #if OPT_A2
+
+int counter; 
 
 void sys__exit(int exitcode) {
   
   struct addrspace *as;
   struct proc *p = curproc;
   
-  post_exitcode(p->pid, exitcode);
+  
   int len = array_num(p->children); 
   for (int i = 0; i < len; i++){
     struct proc *tmp = array_get(p->children, i); 
     if (!hasExited(tmp->pid)){
-        // this is some error or some bs
+        get_wait_lock(tmp->pid); 
     }
     destroy_exit_struct(tmp->pid); 
   }
   // if only one process in the process_exits list then maybe destroy that too
 
-
+  post_exitcode(p->pid, exitcode);
   KASSERT(curproc->p_addrspace != NULL);
+  
   as_deactivate();
   /*
    * clear p_addrspace before calling as_destroy. Otherwise if
@@ -45,7 +47,8 @@ void sys__exit(int exitcode) {
    * half-destroyed address space. This tends to be
    * messily fatal.
    */
-  as = curproc_setas(NULL);
+  struct proc * parent = find_proc_struct(p->parent_pid);
+  as = curproc_setas(parent->p_addrspace); 
   as_destroy(as);
 
   /* detach this thread from its process */
@@ -81,10 +84,14 @@ pid_t sys__fork(struct trapframe *tf){
 	
 	int ret = array_add(p->children, child_proc, NULL); 
 	KASSERT(ret == 0);  // figure out how to handle this error
-	thread_fork(p->p_name, child_proc, enter_forked_process, tf, 1); 
-	
-	
-	return(1);     
+	//char * tmp = kmalloc((strlen(p->p_name) + 1) * sizeof(char) + 1);
+	//*tmp = '\0'; 
+	//strcat(strcat(tmp, p->p_name), "asdf"); 
+	//unsigned long c_as = (unsigned long) child_as;
+	struct trapframe *newtrap = kmalloc(sizeof(struct trapframe)); 
+    *newtrap = *tf;  
+	thread_fork(p->p_name, child_proc, enter_forked_process, newtrap, 2); 
+	return p->pid;     
 }
 
 bool isChild(pid_t pid){
