@@ -82,10 +82,15 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #if OPT_A2
 static volatile unsigned int proc_pid; // NEED TO CHANGE THIS SO THAT WE REUSE PIDS
-struct array *processes; // need to check whether or not to make volatile 
-struct array *process_exits; // need to check whether or not to make volatile 
-static struct lock *processes_lock; 
-static struct lock *process_exits_lock; 
+struct array *processes; // need to check whether or not to make volatile - takeout
+struct array *process_exits; // need to check whether or not to make volatile - takeout
+static struct lock *processes_lock;  // take out 
+static struct lock *process_exits_lock; // take out
+//static volatile int avail_pid[__PID_MAX]; 
+//static struct lock *avail_pid_lock[__PID_MAX]; 
+//static struct cv *avail_pid_cv[__PID_MAX]; 
+//static struct lock *avail_pid_arr_lock; 
+static struct lock *proc_pid_lock; 
 
 #endif /* OPT_A2 */
 
@@ -192,19 +197,29 @@ proc_destroy(struct proc *proc)
 #endif // UW
 
     #if OPT_A2 
-	lock_acquire(processes_lock); 
-	int index = find_index_processes(proc->pid); 
-	array_remove(processes, index); 
-	lock_release(processes_lock); 
+    
+	lock_acquire(processes_lock); // take out
+	int index = find_index_processes(proc->pid); // take out 
+	array_remove(processes, index); // take out
+	lock_release(processes_lock); // take out
 	
     #endif /* OPT_A2 */
     
-	threadarray_cleanup(&proc->p_threads);
+	threadarray_cleanup(&proc->p_threads); 
 	spinlock_cleanup(&proc->p_lock);
-
+	//int curpid = proc->pid; 
 	kfree(proc->p_name);
-	release_wait_lock(proc->pid);
 	kfree(proc);
+	proc = NULL; 
+	
+	#if OPT_A2 
+	 
+	//lock_release(avail_pid_lock[curpid]); // might need to change to cv
+	
+	#endif /* OPT_A2 */
+
+	
+	
 
 #ifdef UW
 	/* decrement the process count */
@@ -238,12 +253,23 @@ proc_bootstrap(void)
 #ifdef UW
   proc_count = 0;
   #if OPT_A2
+  /*for (int i =0; i < __PID_MAX; i++){
+    avail_pid[i] = -1; 
+    char buf[100]; 
+    char buf2[100]; 
+    create_lock_name(i, buf); 
+    create_cv_name(i, buf2); 
+    avail_pid_lock[i] = lock_create(buf); 
+    avail_pid_cv[i] = cv_create(buf2); 
+  }*/
   proc_pid = __PID_MIN; 
-  processes = array_create(); 
-  array_add(processes, kproc, NULL); 
-  process_exits = array_create(); 
-  processes_lock = lock_create("processes_lock"); 
-  process_exits_lock = lock_create("process_exits_lock"); 
+  proc_pid_lock = lock_create("proc_pid_lock"); 
+  //avail_pid_arr_lock = lock_create("avail_pid_arr_lock"); 
+  processes = array_create();  // take out
+  array_add(processes, kproc, NULL); //take out
+  process_exits = array_create(); // take out
+  processes_lock = lock_create("processes_lock"); //take out 
+  process_exits_lock = lock_create("process_exits_lock");//take out 
   #endif /* OPT_A2 */
   proc_count_mutex = sem_create("proc_count_mutex",1);
   if (proc_count_mutex == NULL) {
@@ -316,28 +342,39 @@ proc_create_runprogram(const char *name)
 	P(proc_count_mutex); 
 	proc_count++;
 	#if OPT_A2
-	proc->children = array_create(); 
+	proc->children = array_create();
+	lock_acquire(proc_pid_lock); 
+	//if (pid_taken(proc_pid)){
+	//    proc_pid = find_next_avail_pid();  // ADD THIS REUSABILITY FUNCTIONALITY AFTER
+	//}
 	proc->pid = proc_pid; 
-	proc->parent_pid = curproc->pid; 
-	proc_pid++;     // NEED TO FIX THIS PID SHIT
+	proc_pid++; 
+	lock_release(proc_pid_lock); 
+	proc->parent = curproc; // might have to change back to int 
 	#endif /* OPT_A2 */
 	V(proc_count_mutex);
 	
 	#if OPT_A2
-	struct exit_struct *proc_exit;
-	proc_exit = kmalloc(sizeof(*proc_exit)); 
-	KASSERT(proc_exit != NULL); 
-	proc_exit->pid = proc->pid; 
-	proc_exit->exit_status = 4;
-	proc_exit->wait_lock = lock_create(proc->p_name); 
 	
-	lock_acquire(process_exits_lock); 
-	array_add(process_exits, proc_exit, NULL);
-	lock_release(process_exits_lock);
+	//lock_acquire(avail_pid_arr_lock); 
+	//avail_pid[proc->pid] = 1; 
+	//lock_release(avail_pid_arr_lock); 
 	
-	lock_acquire(processes_lock); 
-	array_add(processes, proc, NULL);
-	lock_release(processes_lock);
+	
+	struct exit_struct *proc_exit; //take out
+	proc_exit = kmalloc(sizeof(*proc_exit)); //take out 
+	KASSERT(proc_exit != NULL); //take out
+	proc_exit->pid = proc->pid; //take out
+	proc_exit->exit_status = 4; //take out
+	proc_exit->wait_lock = lock_create(proc->p_name); //take out
+	
+	lock_acquire(process_exits_lock); //take out
+	array_add(process_exits, proc_exit, NULL); //take out
+	lock_release(process_exits_lock); //take out
+	
+	lock_acquire(processes_lock); //take out
+	array_add(processes, proc, NULL); //take out
+	lock_release(processes_lock); //take out 
 	
 	#endif /* OPT_A2 */
 	
@@ -438,6 +475,71 @@ curproc_setas(struct addrspace *newas)
 }
 
 #if OPT_A2
+// Need to have the proc_pid_lock before calling
+/*int find_next_avail_pid(){
+    for (unsigned i = proc_pid; i < __PID_MAX; i++){
+        if (avail_pid[i] == -1){
+            return i;  
+        }
+    }
+    for (unsigned i = __PID_MIN; i < proc_pid; i++){
+        if (avail_pid[i] == -1){
+            return i; 
+        }
+    }
+    // throw out of processes error
+    return -1; 
+}
+*/
+void post_exitcode(pid_t pid, int exitcode){
+    lock_acquire(process_exits_lock); 
+    struct exit_struct *tmp = find_exit_struct(pid);
+    tmp->exit_status = _MKWAIT_EXIT(exitcode);
+	tmp->exited = true;
+	lock_release(process_exits_lock); 
+}
+
+void create_lock_name(int i, char * buf){
+    const char * tmp = "lock_for_"; 
+    int index = 0; 
+    while (tmp[index] != '\0'){
+        buf[index] = tmp[index]; 
+        index++; 
+    }
+    long rev_sum = 0; 
+    for (int j = 0; j < 5; j++){
+        rev_sum += i % 10; 
+        i = i / 10;     
+    }
+    for (int j = 0; j < 5; j++){
+        buf[index + j] = (char) ((rev_sum % 10) + 48); 
+        rev_sum = rev_sum / 10; 
+    } 
+    buf[index + 5] = '\0'; 
+}
+
+ 
+void create_cv_name(int i, char* buf){
+    const char * tmp = "cv_for_"; 
+    int index = 0; 
+    while (tmp[index] != '\0'){
+        buf[index] = tmp[index]; 
+        index++; 
+    }
+    long rev_sum = 0; 
+    for (int j = 0; j < 5; j++){
+        rev_sum += i % 10; 
+        i = i / 10;     
+    }
+    for (int j = 0; j < 5; j++){
+        buf[index + j] = (char) ((rev_sum % 10) + 48); 
+        rev_sum = rev_sum / 10; 
+    } 
+    buf[index + 5] = '\0'; 
+
+}
+
+// need to hold the process_exits_lock before calling
 int find_index_exits(pid_t pid){
     struct exit_struct * tmp;
     int index = -1;  
@@ -453,6 +555,7 @@ int find_index_exits(pid_t pid){
     return index; 
 }
 
+// need to hold the processes_lock before calling
 int find_index_processes(pid_t pid){
     struct proc * tmp;
     int index = -1; 
@@ -468,25 +571,25 @@ int find_index_processes(pid_t pid){
     return index; 
 }
 
-struct proc * find_proc_struct(pid_t pid){
-    lock_acquire(processes_lock);  
+// need to hold the processes_lock before calling
+struct proc * find_proc_struct(pid_t pid){ 
     int index = find_index_processes(pid);
     struct proc * tmp = array_get(processes, index); 
-    lock_release(processes_lock); 
     return tmp; 
 }
 
+// need to hold the process_exits_lock before calling
 struct exit_struct * find_exit_struct(pid_t pid){
     int index = find_index_exits(pid); 
-    lock_acquire(process_exits_lock);
     struct exit_struct * tmp = array_get(process_exits, index);
-    lock_release(process_exits_lock); 
     return tmp; 
 }  
 
 
 int get_wait_lock(pid_t pid){
-    struct exit_struct *tmp = find_exit_struct(pid); 
+    lock_acquire(process_exits_lock); 
+    struct exit_struct *tmp = find_exit_struct(pid);
+    lock_release(process_exits_lock);  
     lock_acquire(tmp->wait_lock); 
     return tmp->exit_status; 
 }
@@ -494,19 +597,14 @@ int get_wait_lock(pid_t pid){
 void release_wait_lock(pid_t pid){
     struct thread * cur; 
     cur = curthread; 
-    struct exit_struct * tmp = find_exit_struct(pid); 
+    lock_acquire(process_exits_lock);
+    struct exit_struct * tmp = find_exit_struct(pid);
+    lock_release(process_exits_lock);  
     lock_release(tmp->wait_lock);
 }
 
-void post_exitcode(pid_t pid, int exitcode){
-    struct thread * cur; 
-    cur = curthread; 
-    struct exit_struct * tmp = find_exit_struct(pid); 
-    tmp->exit_status = _MKWAIT_EXIT(exitcode);
-    tmp->exited = true; 
-}
-
 void destroy_exit_struct(pid_t pid){
+    lock_acquire(process_exits_lock);
     int index = find_index_exits(pid); 
     struct exit_struct * tmp = find_exit_struct(pid);
     lock_destroy(tmp->wait_lock); 
@@ -516,7 +614,9 @@ void destroy_exit_struct(pid_t pid){
 }
 
 bool hasExited(pid_t pid){
+    lock_acquire(process_exits_lock); 
     struct exit_struct *tmp = find_exit_struct(pid); 
+    lock_release(process_exits_lock); 
     return tmp->exited; 
 }
 

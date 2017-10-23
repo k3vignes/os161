@@ -24,19 +24,16 @@ void sys__exit(int exitcode) {
   
   struct addrspace *as;
   struct proc *p = curproc;
-  
-  
+  struct proc *parent = curproc->parent; 
+  int curpid = p->pid; 
   int len = array_num(p->children); 
   for (int i = 0; i < len; i++){
-    struct proc *tmp = array_get(p->children, i); 
-    if (!hasExited(tmp->pid)){
-        get_wait_lock(tmp->pid); 
+    struct proc *child = array_get(p->children, i); 
+    if (hasExited(child->pid)){
+        destroy_exit_struct(child->pid); 
     }
-    destroy_exit_struct(tmp->pid); 
   }
-  // if only one process in the process_exits list then maybe destroy that too
-
-  post_exitcode(p->pid, exitcode);
+  
   KASSERT(curproc->p_addrspace != NULL);
   
   as_deactivate();
@@ -47,7 +44,6 @@ void sys__exit(int exitcode) {
    * half-destroyed address space. This tends to be
    * messily fatal.
    */
-  struct proc * parent = find_proc_struct(p->parent_pid);
   as = curproc_setas(parent->p_addrspace); 
   as_destroy(as);
 
@@ -57,6 +53,12 @@ void sys__exit(int exitcode) {
 
   /* if this is the last user process in the system, proc_destroy()
      will wake up the kernel menu thread */
+  if (parent != NULL){
+    post_exitcode(curpid, exitcode);
+  }
+  else{
+    destroy_exit_struct(curpid); 
+  }
   proc_destroy(p);
   
   thread_exit();
@@ -109,8 +111,10 @@ int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval){
     if(!isChild(pid)){
         // THROW ERROR   // not sure what error to throw or if not to throw error and just return
     }
-    int exitstatus = get_wait_lock(pid); 
-    release_wait_lock(pid); 
+    //int exitstatus = get_wait_lock(pid); 
+    
+    int exitstatus = 0;
+    //release_wait_lock(pid); 
     int result = options;  // just to keep options distracted; 
     result = copyout((void *)&exitstatus,status,sizeof(int));
     if (result) {

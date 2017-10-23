@@ -138,6 +138,7 @@ syscall(struct trapframe *tf)
 	#if OPT_A2
 	case SYS_fork: 
 	  retval = sys__fork(tf); 
+	  // if retval != curproc->pid => err = 1 else err = 0; 
 	  err = 0; 
 	break; 
 	#endif /* OPT_A2 */ 
@@ -192,9 +193,10 @@ void
 enter_forked_process(void *tf, unsigned long num)
 {
     #if OPT_A2
+    
     num = 2; // distract compiler
-    struct proc* p = curproc; 
-	get_wait_lock(p->pid);   // might be possible that the parent exits before this runs
+    //struct proc* p = curproc; 
+	//get_wait_lock(p->pid);   // might be possible that the parent exits before this runs
     struct thread* t; 
     t = curthread; 
     struct trapframe trapf = *((struct trapframe *)tf); 
