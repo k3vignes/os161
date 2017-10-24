@@ -12,7 +12,7 @@
 #include "opt-A2.h"
 #include "array.h"
 #include "limits.h"
-
+#include "synch.h"
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
 
@@ -24,13 +24,19 @@ void sys__exit(int exitcode) {
   
   struct addrspace *as;
   struct proc *p = curproc;
-  struct proc *parent = curproc->parent; 
+  pid_t parent_pid = curproc->parent_pid; 
+  acquire_process_lock(); 
+  struct proc *parent = find_proc_struct(parent_pid); 
+  release_process_lock(); 
   int curpid = p->pid; 
   int len = array_num(p->children); 
+  
   for (int i = 0; i < len; i++){
-    struct proc *child = array_get(p->children, i); 
-    if (hasExited(child->pid)){
-        destroy_exit_struct(child->pid); 
+    pid_t * child_pid = array_get(p->children, i); 
+    if (hasExited(*child_pid)){  // do something with the exit code if you want
+        destroy_exit_struct(*child_pid); 
+        kfree(child_pid); 
+        child_pid = NULL; 
     }
   }
   
@@ -44,7 +50,7 @@ void sys__exit(int exitcode) {
    * half-destroyed address space. This tends to be
    * messily fatal.
    */
-  as = curproc_setas(parent->p_addrspace); 
+  as = curproc_setas(NULL); 
   as_destroy(as);
 
   /* detach this thread from its process */
@@ -67,8 +73,9 @@ void sys__exit(int exitcode) {
 }
 
 
-int sys_getpid(){
-    return (curproc->pid); 
+int sys_getpid(pid_t * retval){
+    *retval = curproc->pid; 
+    return 0; 
 }
 
 pid_t sys__fork(struct trapframe *tf){
@@ -84,7 +91,10 @@ pid_t sys__fork(struct trapframe *tf){
 	child_proc->p_addrspace = child_as;
 	spinlock_release(&child_proc->p_lock);
 	
-	int ret = array_add(p->children, child_proc, NULL); 
+	
+	pid_t * child_pid = kmalloc(sizeof(pid_t)); 
+	*child_pid = child_proc->pid; 
+	int ret = array_add(p->children, child_pid, NULL); 
 	KASSERT(ret == 0);  // figure out how to handle this error
 	//char * tmp = kmalloc((strlen(p->p_name) + 1) * sizeof(char) + 1);
 	//*tmp = '\0'; 
@@ -93,14 +103,14 @@ pid_t sys__fork(struct trapframe *tf){
 	struct trapframe *newtrap = kmalloc(sizeof(struct trapframe)); 
     *newtrap = *tf;  
 	thread_fork(p->p_name, child_proc, enter_forked_process, newtrap, 2); 
-	return p->pid;     
+	return *child_pid;     
 }
 
 bool isChild(pid_t pid){
     int len = array_num(curproc->children);
     for (int i = 0; i < len; i++){
-        struct proc* tmp = array_get(curproc->children, i);
-        if (tmp->pid == pid){
+        pid_t * tmp = array_get(curproc->children, i);
+        if (*tmp == pid){
             return true; 
         }    
     }
@@ -108,13 +118,28 @@ bool isChild(pid_t pid){
 }
 
 int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval){
+    #if OPT_A2
+    KASSERT(isChild(pid)); // temporary untill i fig out how to do it
     if(!isChild(pid)){
-        // THROW ERROR   // not sure what error to throw or if not to throw error and just return
+        
+        // RETURN ERROR   // not sure what error to throw or if not to throw error and just return
     }
-    //int exitstatus = get_wait_lock(pid); 
     
-    int exitstatus = 0;
-    //release_wait_lock(pid); 
+    // get pointer to child proc
+    acquire_process_exit_lock(); 
+    struct exit_struct* child_exit = find_exit_struct(pid); 
+    release_process_exit_lock(); 
+    
+    // wait for child to exit
+    lock_acquire(child_exit->wait_lock);
+    while(!hasExited(pid)){
+        cv_wait(child_exit->wait_cv, child_exit->wait_lock); 
+        lock_acquire(child_exit->wait_lock);
+    }
+    lock_release(child_exit->wait_lock); 
+    int exitstatus = child_exit->exit_status;
+    #endif /* OPT_A2 */  
+    
     int result = options;  // just to keep options distracted; 
     result = copyout((void *)&exitstatus,status,sizeof(int));
     if (result) {
@@ -145,7 +170,7 @@ void sys__exit(int exitcode) {
    * half-destroyed address space. This tends to be
    * messily fatal.
    */
-  as = curproc_setas(NULL);
+  as = curproc_setas);
   as_destroy(as);
 
   /* detach this thread from its process */

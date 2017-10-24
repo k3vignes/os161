@@ -83,11 +83,14 @@ syscall(struct trapframe *tf)
 	int callno;
 	int32_t retval;
 	int err;
+	pid_t p;  // del after
 
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
 	KASSERT(curthread->t_iplhigh_count == 0);
-
+    
+    
+    p = curproc->pid;  // del after
 	callno = tf->tf_v0;
 
 	/*
@@ -124,8 +127,6 @@ syscall(struct trapframe *tf)
 	  break;
 	case SYS_getpid:
 	  #if OPT_A2
-	  err = sys_getpid(); 
-	  #else
 	  err = sys_getpid((pid_t *)&retval);
 	  #endif /* OPT_A2 */ 
 	  break;

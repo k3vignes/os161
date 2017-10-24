@@ -47,6 +47,16 @@ struct vnode;
 struct semaphore;
 #endif // UW
 
+#if OPT_A2
+struct exit_struct{
+    pid_t pid; 
+    unsigned exit_status; 
+    struct lock *wait_lock; 
+    bool exited; 
+    struct cv *wait_cv; 
+};
+#endif /* OPT_A2 */
+
 /*
  * Process structure.
  */
@@ -55,7 +65,7 @@ struct proc {
 	#if OPT_A2
 	    pid_t pid;              /* Pid  (added by me) */
 	    struct array *children;   
-	    struct proc* parent; 
+	    pid_t parent_pid; 
 	#endif /* OPT_A2 */
 	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
@@ -84,6 +94,10 @@ void create_lock_name(int i, char* buf);
 void create_cv_name(int i, char* buf);
 bool isChild(pid_t pid);
 
+void acquire_process_exit_lock(void);
+void release_process_exit_lock(void);
+void acquire_process_lock(void);
+void release_process_lock(void);  
 int find_index_exits(pid_t pid);
 int find_index_processes(pid_t pid);
 struct proc * find_proc_struct(pid_t pid);

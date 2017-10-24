@@ -61,14 +61,6 @@
  */
 struct proc *kproc;
 
-#if OPT_A2
-struct exit_struct{
-    pid_t pid; 
-    unsigned exit_status; 
-    struct lock *wait_lock; 
-    bool exited; 
-};
-#endif /* OPT_A2 */
 /*
  * Mechanism for making the kernel menu thread sleep while processes are running
  */
@@ -350,7 +342,7 @@ proc_create_runprogram(const char *name)
 	proc->pid = proc_pid; 
 	proc_pid++; 
 	lock_release(proc_pid_lock); 
-	proc->parent = curproc; // might have to change back to int 
+	proc->parent_pid = curproc->pid; // might have to change back to int 
 	#endif /* OPT_A2 */
 	V(proc_count_mutex);
 	
@@ -360,13 +352,19 @@ proc_create_runprogram(const char *name)
 	//avail_pid[proc->pid] = 1; 
 	//lock_release(avail_pid_arr_lock); 
 	
+	char buf[100]; 
+    char buf2[100]; 
+    create_lock_name(proc->pid, buf); 
+    create_cv_name(proc->pid, buf2); 
 	
 	struct exit_struct *proc_exit; //take out
 	proc_exit = kmalloc(sizeof(*proc_exit)); //take out 
 	KASSERT(proc_exit != NULL); //take out
 	proc_exit->pid = proc->pid; //take out
 	proc_exit->exit_status = 4; //take out
-	proc_exit->wait_lock = lock_create(proc->p_name); //take out
+	proc_exit->exited = false; 
+	proc_exit->wait_lock = lock_create(buf); //take out
+	proc_exit->wait_cv = cv_create(buf2); 
 	
 	lock_acquire(process_exits_lock); //take out
 	array_add(process_exits, proc_exit, NULL); //take out
@@ -497,6 +495,9 @@ void post_exitcode(pid_t pid, int exitcode){
     tmp->exit_status = _MKWAIT_EXIT(exitcode);
 	tmp->exited = true;
 	lock_release(process_exits_lock); 
+	lock_acquire(tmp->wait_lock); 
+	cv_signal(tmp->wait_cv, tmp->wait_lock); 
+	lock_release(tmp->wait_lock); 
 }
 
 void create_lock_name(int i, char * buf){
@@ -551,7 +552,6 @@ int find_index_exits(pid_t pid){
             break; 
         }
     }
-    KASSERT(index >= 0);
     return index; 
 }
 
@@ -567,13 +567,15 @@ int find_index_processes(pid_t pid){
             break; 
         }
     }
-    KASSERT(index >= 0);
     return index; 
 }
 
 // need to hold the processes_lock before calling
 struct proc * find_proc_struct(pid_t pid){ 
     int index = find_index_processes(pid);
+    if (index == -1){
+        return NULL; 
+    }
     struct proc * tmp = array_get(processes, index); 
     return tmp; 
 }
@@ -581,6 +583,9 @@ struct proc * find_proc_struct(pid_t pid){
 // need to hold the process_exits_lock before calling
 struct exit_struct * find_exit_struct(pid_t pid){
     int index = find_index_exits(pid); 
+    if (index == -1){
+        return NULL; 
+    }
     struct exit_struct * tmp = array_get(process_exits, index);
     return tmp; 
 }  
@@ -590,6 +595,7 @@ int get_wait_lock(pid_t pid){
     lock_acquire(process_exits_lock); 
     struct exit_struct *tmp = find_exit_struct(pid);
     lock_release(process_exits_lock);  
+    KASSERT(tmp != NULL); 
     lock_acquire(tmp->wait_lock); 
     return tmp->exit_status; 
 }
@@ -600,6 +606,7 @@ void release_wait_lock(pid_t pid){
     lock_acquire(process_exits_lock);
     struct exit_struct * tmp = find_exit_struct(pid);
     lock_release(process_exits_lock);  
+    KASSERT(tmp != NULL); 
     lock_release(tmp->wait_lock);
 }
 
@@ -607,7 +614,11 @@ void destroy_exit_struct(pid_t pid){
     lock_acquire(process_exits_lock);
     int index = find_index_exits(pid); 
     struct exit_struct * tmp = find_exit_struct(pid);
+    lock_release(process_exits_lock);
+    KASSERT(tmp != NULL); 
+    lock_acquire(process_exits_lock);
     lock_destroy(tmp->wait_lock); 
+    cv_destroy(tmp->wait_cv); 
     kfree(tmp); // MIGHT NOT NEED THIS 
     array_remove(process_exits, index);
     lock_release(process_exits_lock);
@@ -617,7 +628,24 @@ bool hasExited(pid_t pid){
     lock_acquire(process_exits_lock); 
     struct exit_struct *tmp = find_exit_struct(pid); 
     lock_release(process_exits_lock); 
+    KASSERT(tmp != NULL); 
     return tmp->exited; 
+}
+
+void acquire_process_lock(void){
+    lock_acquire(processes_lock); 
+}
+
+void release_process_lock(void){
+    lock_release(processes_lock);
+}
+
+void acquire_process_exit_lock(void){
+    lock_acquire(process_exits_lock); 
+}
+
+void release_process_exit_lock(void){
+    lock_release(process_exits_lock); 
 }
 
 #endif /* OPT_A2 */
