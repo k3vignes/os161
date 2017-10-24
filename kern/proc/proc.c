@@ -354,9 +354,11 @@ proc_create_runprogram(const char *name)
 	
 	char buf[100]; 
     char buf2[100]; 
+    char buf3[100]; // maybe takeout
     create_lock_name(proc->pid, buf); 
     create_cv_name(proc->pid, buf2); 
-	
+	create_lock_name(proc->pid, buf3); // maybe takeout
+	 
 	struct exit_struct *proc_exit; //take out
 	proc_exit = kmalloc(sizeof(*proc_exit)); //take out 
 	KASSERT(proc_exit != NULL); //take out
@@ -628,7 +630,10 @@ bool hasExited(pid_t pid){
     lock_acquire(process_exits_lock); 
     struct exit_struct *tmp = find_exit_struct(pid); 
     lock_release(process_exits_lock); 
-    KASSERT(tmp != NULL); 
+    //KASSERT(tmp != NULL); 
+    if (tmp == NULL){
+        panic("pid of %d doesn't exit", pid);
+    }
     return tmp->exited; 
 }
 
