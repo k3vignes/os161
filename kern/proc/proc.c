@@ -73,16 +73,13 @@ static struct semaphore *proc_count_mutex;
 /* used to signal the kernel menu thread when there are no processes */
 struct semaphore *no_proc_sem;   
 #if OPT_A2
-static volatile unsigned int proc_pid; // NEED TO CHANGE THIS SO THAT WE REUSE PIDS
-struct array *processes; // need to check whether or not to make volatile - takeout
-struct array *process_exits; // need to check whether or not to make volatile - takeout
-static struct lock *processes_lock;  // take out 
-static struct lock *process_exits_lock; // take out
-//static volatile int avail_pid[__PID_MAX]; 
-//static struct lock *avail_pid_lock[__PID_MAX]; 
-//static struct cv *avail_pid_cv[__PID_MAX]; 
-//static struct lock *avail_pid_arr_lock; 
+static volatile unsigned int proc_pid; 
+struct array *processes;
+struct array *process_exits; 
+static struct lock *processes_lock;  
+static struct lock *process_exits_lock; 
 static struct lock *proc_pid_lock; 
+
 
 #endif /* OPT_A2 */
 
@@ -140,15 +137,14 @@ proc_destroy(struct proc *proc)
          * be defined because the calling thread may have already detached itself
          * from the process.
 	 */
-    
-    struct thread *cur; // delete
-	cur = curthread; // delete
-	struct proc *cur_proc; //delete
-	cur_proc = curproc; // delete
-	
+    	
 	KASSERT(proc != NULL);
 	KASSERT(proc != kproc);
-
+    pid_t pid; 
+    pid_t parent_pid; 
+    pid = proc->pid; 
+    parent_pid = proc->parent_pid; 
+    
 	/*
 	 * We don't take p_lock in here because we must have the only
 	 * reference to this structure. (Otherwise it would be
@@ -189,24 +185,22 @@ proc_destroy(struct proc *proc)
 #endif // UW
 
     #if OPT_A2 
-    
-	lock_acquire(processes_lock); // take out
-	int index = find_index_processes(proc->pid); // take out 
-	array_remove(processes, index); // take out
-	lock_release(processes_lock); // take out
+    //lock_destroy(proc->creation_lock); 
+	//lock_acquire(processes_lock); 
+	//int index = find_index_processes(proc->pid); 
+	//array_remove(processes, index);
+	//lock_release(processes_lock); 
 	
     #endif /* OPT_A2 */
     
 	threadarray_cleanup(&proc->p_threads); 
 	spinlock_cleanup(&proc->p_lock);
-	//int curpid = proc->pid; 
 	kfree(proc->p_name);
 	kfree(proc);
 	proc = NULL; 
 	
 	#if OPT_A2 
 	 
-	//lock_release(avail_pid_lock[curpid]); // might need to change to cv
 	
 	#endif /* OPT_A2 */
 
@@ -245,23 +239,13 @@ proc_bootstrap(void)
 #ifdef UW
   proc_count = 0;
   #if OPT_A2
-  /*for (int i =0; i < __PID_MAX; i++){
-    avail_pid[i] = -1; 
-    char buf[100]; 
-    char buf2[100]; 
-    create_lock_name(i, buf); 
-    create_cv_name(i, buf2); 
-    avail_pid_lock[i] = lock_create(buf); 
-    avail_pid_cv[i] = cv_create(buf2); 
-  }*/
   proc_pid = __PID_MIN; 
   proc_pid_lock = lock_create("proc_pid_lock"); 
-  //avail_pid_arr_lock = lock_create("avail_pid_arr_lock"); 
-  processes = array_create();  // take out
-  array_add(processes, kproc, NULL); //take out
-  process_exits = array_create(); // take out
-  processes_lock = lock_create("processes_lock"); //take out 
-  process_exits_lock = lock_create("process_exits_lock");//take out 
+  processes = array_create();  
+  array_add(processes, kproc, NULL); 
+  process_exits = array_create(); 
+  processes_lock = lock_create("processes_lock");  
+  process_exits_lock = lock_create("process_exits_lock"); 
   #endif /* OPT_A2 */
   proc_count_mutex = sem_create("proc_count_mutex",1);
   if (proc_count_mutex == NULL) {
@@ -283,13 +267,37 @@ proc_bootstrap(void)
 struct proc *
 proc_create_runprogram(const char *name)
 {
+    //kprintf("proc_create_runprogram\n"); 
 	struct proc *proc;
 	char *console_path;
-    
-	proc = proc_create(name);
-	if (proc == NULL) {
-		return NULL;
+	
+	#if OPT_A2
+	pid_t tmp_pid; 
+	lock_acquire(proc_pid_lock); 
+	if (pid_taken(proc_pid)){
+	    int tmp = find_next_avail_pid(); 
+	    if (tmp <= -1){
+	        KASSERT(tmp > 0); // tmp
+	        return NULL; // ran out of pids
+	    }
+	    proc_pid = tmp; 
 	}
+	tmp_pid = proc_pid;
+	//proc->pid = proc_pid; 
+	proc_pid++; 
+	lock_release(proc_pid_lock); 
+	const char * tmp2; 
+	tmp2 = name; 
+    char buf1[100]; 
+    create_proc_name(tmp_pid, buf1); 
+    #endif /* OPT_A2 */
+    
+	proc = proc_create(buf1);
+	if (proc == NULL) {
+		KASSERT(proc != NULL); // tmp
+		return NULL; 
+	}
+	proc->pid = tmp_pid;
 	
 
 #ifdef UW
@@ -307,7 +315,7 @@ proc_create_runprogram(const char *name)
 	/* VM fields */
 
 	proc->p_addrspace = NULL;
-
+	
 	/* VFS fields */
 
 #ifdef UW
@@ -335,51 +343,41 @@ proc_create_runprogram(const char *name)
 	proc_count++;
 	#if OPT_A2
 	proc->children = array_create();
-	lock_acquire(proc_pid_lock); 
-	//if (pid_taken(proc_pid)){
-	//    proc_pid = find_next_avail_pid();  // ADD THIS REUSABILITY FUNCTIONALITY AFTER
-	//}
-	proc->pid = proc_pid; 
-	proc_pid++; 
-	lock_release(proc_pid_lock); 
-	proc->parent_pid = curproc->pid; // might have to change back to int 
+	//pid_t * tmp_parent_pid = kmalloc(sizeof(pid_t)); 
+	//*tmp_parent_pid = curproc->pid; 
+	proc->parent_pid = curproc->pid;   
+	//proc->creation_lock = lock_create("creation_lock"); 
 	#endif /* OPT_A2 */
 	V(proc_count_mutex);
 	
 	#if OPT_A2
 	
-	//lock_acquire(avail_pid_arr_lock); 
-	//avail_pid[proc->pid] = 1; 
-	//lock_release(avail_pid_arr_lock); 
-	
 	char buf[100]; 
     char buf2[100]; 
-    char buf3[100]; // maybe takeout
     create_lock_name(proc->pid, buf); 
     create_cv_name(proc->pid, buf2); 
-	create_lock_name(proc->pid, buf3); // maybe takeout
 	 
-	struct exit_struct *proc_exit; //take out
-	proc_exit = kmalloc(sizeof(*proc_exit)); //take out 
-	KASSERT(proc_exit != NULL); //take out
-	proc_exit->pid = proc->pid; //take out
-	proc_exit->exit_status = 4; //take out
+	struct exit_struct *proc_exit;
+	proc_exit = kmalloc(sizeof(*proc_exit));  
+	KASSERT(proc_exit != NULL); 
+	proc_exit->pid = proc->pid; 
+	proc_exit->exit_status = 4; 
 	proc_exit->exited = false; 
-	proc_exit->wait_lock = lock_create(buf); //take out
+	proc_exit->wait_lock = lock_create(buf);
 	proc_exit->wait_cv = cv_create(buf2); 
 	
-	lock_acquire(process_exits_lock); //take out
-	array_add(process_exits, proc_exit, NULL); //take out
-	lock_release(process_exits_lock); //take out
+	lock_acquire(process_exits_lock); 
+	array_add(process_exits, proc_exit, NULL); 
+	lock_release(process_exits_lock); 
 	
-	lock_acquire(processes_lock); //take out
-	array_add(processes, proc, NULL); //take out
-	lock_release(processes_lock); //take out 
+	lock_acquire(processes_lock); 
+	array_add(processes, proc, NULL); 
+	lock_release(processes_lock);  
 	
 	#endif /* OPT_A2 */
 	
 #endif // UW
-
+    
 	return proc;
 }
 
@@ -475,22 +473,35 @@ curproc_setas(struct addrspace *newas)
 }
 
 #if OPT_A2
+bool pid_taken(pid_t pid){
+    lock_acquire(process_exits_lock); 
+    pid_t tmp = find_index_exits(pid);
+    lock_release(process_exits_lock); 
+    
+    lock_acquire(processes_lock); 
+    pid_t tmp2 = find_index_processes(pid); 
+    lock_release(processes_lock); 
+    if (tmp != -1 || tmp2 != -1){
+        return true; 
+    }
+    return false; 
+}
+
 // Need to have the proc_pid_lock before calling
-/*int find_next_avail_pid(){
+int find_next_avail_pid(){ 
     for (unsigned i = proc_pid; i < __PID_MAX; i++){
-        if (avail_pid[i] == -1){
+        if (!pid_taken(i)){
             return i;  
         }
     }
     for (unsigned i = __PID_MIN; i < proc_pid; i++){
-        if (avail_pid[i] == -1){
+        if (!pid_taken(i)){
             return i; 
         }
-    }
-    // throw out of processes error
+    } 
     return -1; 
 }
-*/
+
 void post_exitcode(pid_t pid, int exitcode){
     lock_acquire(process_exits_lock); 
     struct exit_struct *tmp = find_exit_struct(pid);
@@ -521,6 +532,24 @@ void create_lock_name(int i, char * buf){
     buf[index + 5] = '\0'; 
 }
 
+void create_proc_name(int i, char * buf){
+    const char * tmp = "prID_for_"; 
+    int index = 0; 
+    while (tmp[index] != '\0'){
+        buf[index] = tmp[index]; 
+        index++; 
+    }
+    long rev_sum = 0; 
+    for (int j = 0; j < 5; j++){
+        rev_sum += i % 10; 
+        i = i / 10;     
+    }
+    for (int j = 0; j < 5; j++){
+        buf[index + j] = (char) ((rev_sum % 10) + 48); 
+        rev_sum = rev_sum / 10; 
+    } 
+    buf[index + 5] = '\0'; 
+}
  
 void create_cv_name(int i, char* buf){
     const char * tmp = "cv_for_"; 
@@ -582,6 +611,16 @@ struct proc * find_proc_struct(pid_t pid){
     return tmp; 
 }
 
+// need to hold the processes_lock before calling
+void remove_process_from_table(pid_t pid){ 
+    int proc_index = find_index_processes(pid);
+    //KASSERT(proc_index != -1); 
+    if (proc_index == -1){
+        panic("curproc: %d, trying to REMOVE child_pid: %d \n", curproc->pid, pid);
+    }
+    array_remove(processes, proc_index); 
+}
+
 // need to hold the process_exits_lock before calling
 struct exit_struct * find_exit_struct(pid_t pid){
     int index = find_index_exits(pid); 
@@ -616,12 +655,10 @@ void destroy_exit_struct(pid_t pid){
     lock_acquire(process_exits_lock);
     int index = find_index_exits(pid); 
     struct exit_struct * tmp = find_exit_struct(pid);
-    lock_release(process_exits_lock);
     KASSERT(tmp != NULL); 
-    lock_acquire(process_exits_lock);
     lock_destroy(tmp->wait_lock); 
     cv_destroy(tmp->wait_cv); 
-    kfree(tmp); // MIGHT NOT NEED THIS 
+    kfree(tmp); 
     array_remove(process_exits, index);
     lock_release(process_exits_lock);
 }

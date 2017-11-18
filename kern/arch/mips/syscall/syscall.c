@@ -77,6 +77,20 @@
  * stack, starting at sp+16 to skip over the slots for the
  * registerized values, with copyin().
  */
+ 
+void specialfunctionbefore(pid_t p, int callno, int arg, int32_t retval, int err);
+void specialfunctionafter(pid_t p, int callno, int arg, int32_t retval, int err);
+
+void specialfunctionbefore(pid_t p, int callno, int arg, int32_t retval, int err){
+    int before = p + callno + arg + retval + err; 
+    before++; 
+}
+
+void specialfunctionafter(pid_t p, int callno, int arg, int32_t retval, int err){
+    int after = p + callno + arg + retval + err; 
+    after++; 
+}
+
 void
 syscall(struct trapframe *tf)
 {
@@ -84,6 +98,7 @@ syscall(struct trapframe *tf)
 	int32_t retval;
 	int err;
 	pid_t p;  // del after
+	int arg; 
 
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
@@ -92,6 +107,8 @@ syscall(struct trapframe *tf)
     
     p = curproc->pid;  // del after
 	callno = tf->tf_v0;
+	arg = tf->tf_a0; 
+	//kprintf("number: %d\n", callno); 
 
 	/*
 	 * Initialize retval to 0. Many of the system calls don't
@@ -121,7 +138,9 @@ syscall(struct trapframe *tf)
 			  (int *)(&retval));
 	  break;
 	case SYS__exit:
+	  specialfunctionbefore(p, callno, arg, retval, err);
 	  sys__exit((int)tf->tf_a0);
+	  specialfunctionafter(p, callno, arg, retval, err);
 	  /* sys__exit does not return, execution should not get here */
 	  panic("unexpected return from sys__exit");
 	  break;
@@ -131,22 +150,32 @@ syscall(struct trapframe *tf)
 	  #endif /* OPT_A2 */ 
 	  break;
 	case SYS_waitpid:
+	  specialfunctionbefore(p, callno, arg, retval, err);
 	  err = sys_waitpid((pid_t)tf->tf_a0,
 			    (userptr_t)tf->tf_a1,
 			    (int)tf->tf_a2,
 			    (pid_t *)&retval);
+      specialfunctionafter(p, callno, arg, retval, err);
 	  break;
 	#if OPT_A2
 	case SYS_fork: 
-	  retval = sys__fork(tf); 
-	  // if retval != curproc->pid => err = 1 else err = 0; 
 	  err = 0; 
+	  specialfunctionbefore(p, callno, arg, retval, err); 
+	  retval = sys__fork(tf, (int *) &err);
+	  specialfunctionafter(p, callno, arg, retval, err); 
+	  // if retval != curproc->pid => err = 1 else err = 0; 
 	break; 
+	case SYS_execv:
+        err = 0; 
+        specialfunctionbefore(p, callno, arg, retval, err); 
+        retval = sys__execv(tf); 
+        specialfunctionafter(p, callno, arg, retval, err); 
+        
+    break; 
 	#endif /* OPT_A2 */ 
 #endif // UW
 
 	    /* Add stuff here */
- 
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
 	  err = ENOSYS;
@@ -196,19 +225,12 @@ enter_forked_process(void *tf, unsigned long num)
     #if OPT_A2
     
     num = 2; // distract compiler
-    //struct proc* p = curproc; 
-	//get_wait_lock(p->pid);   // might be possible that the parent exits before this runs
     struct thread* t; 
     t = curthread; 
     struct trapframe trapf = *((struct trapframe *)tf); 
     trapf.tf_v0 = 0; 
     trapf.tf_a3 = 0; 
     trapf.tf_epc += 4; 
-     
-    //newtrap->tf_v0 = 0; 
-    //newtrap->tf_a3 = 0;  // not sure of this line
-    //newtrap->tf_epc += 4;
-    //curthread->t_stack = newtrap; //might need this line
 	mips_usermode(&trapf);
 	#endif /* OPT_A2 */
 }

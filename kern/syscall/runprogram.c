@@ -54,6 +54,7 @@
 int
 runprogram(char *progname)
 {
+    //kprintf("main Prog: %s\n", progname);    
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;

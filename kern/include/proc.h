@@ -66,6 +66,7 @@ struct proc {
 	    pid_t pid;              /* Pid  (added by me) */
 	    struct array *children;   
 	    pid_t parent_pid; 
+	    //struct lock * creation_lock; 
 	#endif /* OPT_A2 */
 	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
@@ -91,15 +92,19 @@ struct proc {
 #if OPT_A2
 int find_next_avail_pid(void);
 void create_lock_name(int i, char* buf);
+void create_proc_name(int i, char * buf);
 void create_cv_name(int i, char* buf);
 bool isChild(pid_t pid);
 
+bool pid_taken(pid_t pid);
+int find_next_avail_pid(void);
 void acquire_process_exit_lock(void);
 void release_process_exit_lock(void);
 void acquire_process_lock(void);
 void release_process_lock(void);  
 int find_index_exits(pid_t pid);
 int find_index_processes(pid_t pid);
+void remove_process_from_table(pid_t pid); 
 struct proc * find_proc_struct(pid_t pid);
 struct exit_struct * find_exit_struct(pid_t pid);
 int get_wait_lock(pid_t pid);

@@ -65,7 +65,8 @@ void sys__exit(int exitcode);
 
 #if OPT_A2
 int sys_getpid(pid_t *retval); 
-pid_t sys__fork(struct trapframe *tf); 
+pid_t sys__fork(struct trapframe *tf, int * err); 
+int sys__execv(struct trapframe *tf); 
 //pid_t sys_waitpid(pid_t pid, int *status, int options); 
 int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval);
 #else

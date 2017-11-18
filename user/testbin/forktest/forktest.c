@@ -157,7 +157,7 @@ test(int nowait)
 	/*
 	 * These must be called in reverse order to avoid waiting
 	 * improperly.
-	 */
+	 */	 
 	dowait(nowait, pid3);
 	dowait(nowait, pid2);
 	dowait(nowait, pid1);
@@ -179,7 +179,7 @@ main(int argc, char *argv[])
 		return 1;
 	}
 	warnx("Starting.");
-
+    //printf("nowait: %d\n", nowait);  // my modification (get rid of later)
 	test(nowait);
 
 	warnx("Complete.");
