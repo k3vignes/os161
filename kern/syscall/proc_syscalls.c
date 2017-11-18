@@ -234,7 +234,7 @@ int sys__execv(struct trapframe *tf){
 	int result; 
 	prog_name = kstrdup((char *) tf->tf_a0); 
 	
-    kprintf("prog: %s\n", prog_name);
+    //kprintf("prog: %s\n", prog_name);
     
     KASSERT(curproc->p_addrspace != NULL); // not sure if need to check this
   
