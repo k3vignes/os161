@@ -52,9 +52,11 @@
  *
  * Calls vfs_open on progname and thus may destroy it.
  */
+ 
 int
 runprogram(int nargs, char ** args)
-{
+{   
+    #if OPT_A2
     char progname[128];
     KASSERT(strlen(args[0]) < sizeof(progname));
 	strcpy(progname, args[0]);
@@ -133,6 +135,8 @@ runprogram(int nargs, char ** args)
 	/* Warp to user mode. */
 	enter_new_process(nargs /*argc*/, (userptr_t) stackptr /*userspace addr of argv*/,
 			  stackptr, entrypoint);
+	
+	#endif /* OPT_A2 */
 	
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");

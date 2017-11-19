@@ -169,22 +169,8 @@ bool isChild(pid_t pid){
 }
 
 int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval){
-    //kprintf("sys_fork\n"); 
-    //acquire_process_lock(); 
-    //struct proc* child_proc = find_proc_struct(pid); 
-    //KASSERT(child_proc != NULL); 
-    //pid_t parent_pid; // debuggin purposes
-    //parent_pid = child_proc->parent_pid; 
-    //release_process_lock();  
-    //if(child_proc != NULL){
-        //spinlock_acquire(&child_proc->p_lock); 
-        //spinlock_release(&child_proc->p_lock); 
-        //spinlock_acquire(
-        //lock_acquire(child_proc->creation_lock); 
-        //lock_release(child_proc->creation_lock);  // add back in after figurin out deadlock
-    //}
+   
     #if OPT_A2
-    
     //KASSERT(isChild(pid)); // temporary untill i fig out how to do it
     if(!isChild(pid)){
         panic("curproc: %d, trying to wait for child_pid: %d \n", curproc->pid, pid);
