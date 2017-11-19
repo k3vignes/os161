@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <copyinout.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -52,9 +53,12 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(int nargs, char ** args)
 {
-    //kprintf("main Prog: %s\n", progname);    
+    char progname[128];
+    KASSERT(strlen(args[0]) < sizeof(progname));
+	strcpy(progname, args[0]);
+    KASSERT(nargs >= 1);     
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
@@ -97,9 +101,37 @@ runprogram(char *progname)
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
+	
+	// copy each string out to stack
+	char * nullptr; 
+	nullptr = NULL; 
+	//int str_lens[8]; 
+	int MAX_ARG_LEN  = 64; // Assumed max arg len
+    size_t len; 
+    stackptr -= 4;
+    copyout(nullptr, (userptr_t)(stackptr), 4);  
+    for (int i = 0; i < nargs; i++){
+        stackptr -= MAX_ARG_LEN; 
+        copyoutstr(args[i], (userptr_t)stackptr, MAX_ARG_LEN, &len);
+        
+        //len = ROUNDUP(len, 8);      // prob able to divide len / 4
+        //str_lens[i] = len; 
+    }  
+    userptr_t start_str_arr_ptr = (userptr_t)(stackptr); 
+	
+	
+	
+	// create the pointers to each string 
+	stackptr -= 4;
+	copyout(nullptr, (userptr_t)(stackptr), 4);  
+	for (int i = 0; i < nargs; i++){
+	    stackptr -= 4; 
+	    char * tmp_arg_addr =(char *) (start_str_arr_ptr + MAX_ARG_LEN * i); 
+	    copyout(&tmp_arg_addr, (userptr_t) stackptr, 4);   //userptr_t might not copy out properly
+	}
 
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(nargs /*argc*/, (userptr_t) stackptr /*userspace addr of argv*/,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */

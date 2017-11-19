@@ -226,16 +226,40 @@ int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval){
     return(0); 
 }
 
-int sys__execv(struct trapframe *tf){
-    char * prog_name; 
+int sys__execv(userptr_t uprog_name, userptr_t uargs){
     struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result; 
-	prog_name = kstrdup((char *) tf->tf_a0); 
+	//struct array *kargs; 
+	//array_init(kargs); 
+	char  kprog_name[PATH_MAX]; 
+	//char * kargs[ARG_MAX/1024];  // found on piazza //note arg_max = 64 * 1024
+	copyinstr(uprog_name, kprog_name, PATH_MAX, NULL);	
 	
-    //kprintf("prog: %s\n", prog_name);
-    
+	//int offset = 0; 
+	char c_str[8][64];    // might need to make bigger depending on tests
+	userptr_t c; 
+	
+	copyin(uargs, &c, 4);
+	int nargs = 0;  
+	while (c != NULL && nargs < 8){
+	    //c_str[nargs] = kmalloc(64); 
+	    copyinstr(c, c_str[nargs], 64, NULL); 
+	    nargs++; 
+	    copyin(uargs + nargs * 4, &c, 4); 
+	}
+	//c_str[nargs] = NULL; 
+
+	//copyin(uargs  + 12, &c, 4); 
+	//copyinstr(c, c_str[0], 64, NULL);
+	//kprintf("tmp: %p,   %d   \n", *tmp_ptr, (c==NULL)); 
+	//kprintf("c: %s\n", c_str[0]); 
+	//copyin(uargs + 4, &c, 4); 
+	//copyinstr(c, c_str[1], 64, NULL); 
+	//kprintf("c: %s\n", c_str[1]); 
+	 
+	//kprintf("arg[0]: %s,    %s,    %s\n", (char *)array_get(kargs, 0), (char *)array_get(kargs, 1), (char *)array_get(kargs,2)); 
     KASSERT(curproc->p_addrspace != NULL); // not sure if need to check this
   
   
@@ -252,7 +276,7 @@ int sys__execv(struct trapframe *tf){
     
 
 	/* Open the file. */
-	result = vfs_open(prog_name, O_RDONLY, 0, &v);
+	result = vfs_open(kprog_name, O_RDONLY, 0, &v);
 	if (result) {
 		return result;
 	}
@@ -285,9 +309,39 @@ int sys__execv(struct trapframe *tf){
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
-
+	
+	
+	// copy each string out to stack
+	
+	char * nullptr; 
+	nullptr = NULL; 
+	//int str_lens[8]; 
+	int MAX_ARG_LEN  = 64; // Assumed max arg len
+    size_t len; 
+    stackptr -= 4;
+    copyout(nullptr, (userptr_t)(stackptr), 4);  
+    for (int i = 0; i < nargs; i++){
+        stackptr -= MAX_ARG_LEN; 
+        copyoutstr(c_str[i], (userptr_t)stackptr, MAX_ARG_LEN, &len);
+        
+        //len = ROUNDUP(len, 8);      // prob able to divide len / 4
+        //str_lens[i] = len; 
+    }  
+    userptr_t start_str_arr_ptr = (userptr_t)(stackptr); 
+	
+	
+	
+	// create the pointers to each string 
+	stackptr -= 4;
+	copyout(nullptr, (userptr_t)(stackptr), 4);  
+	for (int i = 0; i < nargs; i++){
+	    stackptr -= 4; 
+	    char * tmp_arg_addr =(char *) (start_str_arr_ptr + MAX_ARG_LEN * i); 
+	    copyout(&tmp_arg_addr, (userptr_t) stackptr, 4);   //userptr_t might not copy out properly
+	}
+	
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(nargs /*argc*/, (userptr_t) stackptr/*userspace addr of argv*/,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */

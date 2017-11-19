@@ -167,8 +167,10 @@ syscall(struct trapframe *tf)
 	break; 
 	case SYS_execv:
         err = 0; 
+        userptr_t prog_name = (userptr_t) tf->tf_a0; 
+        userptr_t args = (userptr_t) tf->tf_a1; 
         specialfunctionbefore(p, callno, arg, retval, err); 
-        retval = sys__execv(tf); 
+        retval = sys__execv(prog_name, args); 
         specialfunctionafter(p, callno, arg, retval, err); 
         
     break; 
