@@ -161,6 +161,7 @@ load_elf(struct vnode *v, vaddr_t *entrypoint)
 	struct addrspace *as;
 
 	as = curproc_getas();
+	as->isloadcomplete = false; 
 
 	/*
 	 * Read the executable header from offset 0 in the file.
@@ -297,6 +298,7 @@ load_elf(struct vnode *v, vaddr_t *entrypoint)
 	}
 
 	result = as_complete_load(as);
+	as->isloadcomplete = true; 
 	if (result) {
 		return result;
 	}

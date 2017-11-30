@@ -37,6 +37,8 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include "opt-A3.h"
+#include "syscall.h"
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -117,11 +119,15 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	faultaddress &= PAGE_FRAME;
 
 	DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
-
+    //kprintf("here\n"); 
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
 		/* We always create pages read-write, so we can't get this */
-		panic("dumbvm: got VM_FAULT_READONLY\n");
+		//kprintf("dumbvm: got VM_FAULT_READONLY\n");
+		//return VM_FAULT_READONLY; 
+		//panic("dumbvm: got VM_FAULT_READONLY\n");
+		    return VM_FAULT_READONLY; 
+		break; 
 	    case VM_FAULT_READ:
 	    case VM_FAULT_WRITE:
 		break;
@@ -169,6 +175,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	stacktop = USERSTACK;
 
 	if (faultaddress >= vbase1 && faultaddress < vtop1) {
+	    //#if OPT_A3
+	    //sys__exit(1); 
+	    //proc_remthread(curthread);
+	    // return VM_FAULT_READONLY; 
+	    //vm_fault(VM_FAULT_READONLY, faultaddress);    // not sure if this is how to implement read-only
+	    //#endif /* OPT_A3 */
 		paddr = (faultaddress - vbase1) + as->as_pbase1;
 	}
 	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
@@ -193,16 +205,29 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			continue;
 		}
 		ehi = faultaddress;
-		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		#if OPT_A3
+		if (faultaddress >= vbase1 && faultaddress < vtop1 && as->isloadcomplete) {
+	        elo = paddr | TLBLO_VALID; 
+	        elo &= ~TLBLO_DIRTY; 
+	    }
+	    else {
+		    elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		}
+		#endif /* OPT_A3 */
 		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 		tlb_write(ehi, elo, i);
 		splx(spl);
 		return 0;
 	}
-
-	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
+	#if OPT_A3
+    ehi = faultaddress; 
+    elo = paddr; 
+    tlb_random(ehi, elo); 
+	//kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
 	splx(spl);
-	return EFAULT;
+	return 0; 
+	//return EFAULT;
+	#endif /* OPT_A3 */
 }
 
 struct addrspace *
